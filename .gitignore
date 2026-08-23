@@ -1,0 +1,22 @@
+# Python & Virtual Environments
+.env
+.env.local
+*.pyc
+__pycache__/
+.venv/
+env/
+.DS_Store
+
+# Next.js & Frontend
+node_modules/
+.next/
+dist/
+build/
+
+# Downloaded Raw NetCDFs
+data/nc_downloads/
+*.nc
+
+# Copernicus Credentials & temp sidecars
+.copernicusmarine/
+graphify-out/
