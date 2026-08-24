@@ -1,0 +1,28 @@
+{
+  "status": "OPERATIONAL_SUCCESS",
+  "date": "2026-07-16",
+  "region": "North Indian Ocean (5\u00b0N\u201330\u00b0N, 45\u00b0E\u2013105\u00b0E)",
+  "grid_resolution": "0.25 Degree (101 x 241)",
+  "depth_levels_m": [
+    0,
+    5,
+    10,
+    20,
+    30,
+    50,
+    75,
+    100,
+    125,
+    150,
+    200,
+    300,
+    500,
+    700,
+    1000
+  ],
+  "mean_surface_sst_degC": 26.742746353149414,
+  "mean_thermocline_100m_degC": 22.28748893737793,
+  "mean_deep_1000m_degC": 7.867598533630371,
+  "isotherm_20C_avg_depth_m": 118.5,
+  "cross_section_image": "live_ocean_thermal_cross_section.png"
+}

@@ -219,24 +219,42 @@ class OceanDataset(Dataset):
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         """Returns one daily training pair after full preprocessing."""
-        raw_inputs = self.inputs[idx]     # (7, 101, 241)
+        raw_inputs = self.inputs[idx]     # (C, 101, 241)
         raw_targets = self.targets[idx]   # (15, 101, 241)
 
-        # Run the full preprocessing pipeline on inputs
-        processed_inputs, mask, _ = preprocess_inputs(
-            raw_inputs,
+        # 1. Preprocess physical channels (0 to 6)
+        p_phys, mask, _ = preprocess_inputs(
+            raw_inputs[:7],
             stats=self.norm_stats,
             mask=self.land_mask,
             nan_fill_method="spatial_median",
         )
 
-        # Normalize targets (temperature) independently
-        target_mean = self.norm_stats["TEMP_TARGET"]["mean"]
-        target_std  = self.norm_stats["TEMP_TARGET"]["std"]
-        processed_targets = (raw_targets - target_mean) / target_std
+        # 2. If extra channels exist (DOY harmonics, SST Anomaly, MLD proxy), mask & zero-fill NaNs
+        if raw_inputs.shape[0] > 7:
+            extra_ch = raw_inputs[7:].copy()
+            # Replace NaNs over land with 0.0
+            extra_ch = np.where(np.isnan(extra_ch), 0.0, extra_ch)
+            # Apply ocean mask to extra channels as well
+            for ch_i in range(extra_ch.shape[0]):
+                extra_ch[ch_i][~mask] = 0.0
+            processed_inputs = np.concatenate([p_phys, extra_ch], axis=0)
+        else:
+            processed_inputs = p_phys
 
-        # Fill any NaN in targets (e.g. below seafloor in shallow areas)
-        processed_targets = np.where(np.isnan(processed_targets), 0.0, processed_targets)
+        # Ensure entire input tensor is completely free of NaNs and Infs
+        processed_inputs = np.nan_to_num(processed_inputs, nan=0.0, posinf=0.0, neginf=0.0)
+
+        # 3. Per-Depth Target Normalization (Feature 3)
+        from config import TEMP_TARGET_STATS_PER_DEPTH
+        processed_targets = np.zeros_like(raw_targets, dtype=np.float32)
+        for d_idx in range(min(15, raw_targets.shape[0])):
+            d_mean = TEMP_TARGET_STATS_PER_DEPTH[d_idx]["mean"]
+            d_std  = TEMP_TARGET_STATS_PER_DEPTH[d_idx]["std"]
+            processed_targets[d_idx] = (raw_targets[d_idx] - d_mean) / d_std
+
+        # Fill any NaN in targets (over land / below seafloor) with 0.0
+        processed_targets = np.nan_to_num(processed_targets, nan=0.0, posinf=0.0, neginf=0.0)
 
         return (
             torch.from_numpy(processed_inputs.astype(np.float32)),

@@ -163,18 +163,21 @@ class TransformerBottleneck(nn.Module):
         )
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, return_attention: bool = False) -> torch.Tensor:
         B, C, H, W = x.shape
         # Flatten spatial dims → sequence of tokens: (B, H*W, C)
         tokens = x.flatten(2).transpose(1, 2)
         # Self-Attention with residual
         normed = self.norm1(tokens)
-        attn_out, _ = self.attn(normed, normed, normed)
+        attn_out, attn_weights = self.attn(normed, normed, normed, need_weights=True)
         tokens = tokens + self.dropout(attn_out)
         # Feed-Forward MLP with residual
         tokens = tokens + self.mlp(self.norm2(tokens))
         # Reshape back to spatial map: (B, C, H, W)
-        return tokens.transpose(1, 2).reshape(B, C, H, W)
+        out_spatial = tokens.transpose(1, 2).reshape(B, C, H, W)
+        if return_attention:
+            return out_spatial, attn_weights
+        return out_spatial
 
 
 # ==============================================================================
@@ -272,22 +275,26 @@ class OceanUNetViT(nn.Module):
         # OUTPUT HEAD — Projects from base_filters → 15 depth levels
         # ----------------------------------------------------------------------
         self.output_head = nn.Conv2d(f, out_depth_levels, kernel_size=1)
+        # Learnable per-depth bias correction layer (Feature 4)
+        self.depth_bias = nn.Parameter(torch.zeros(1, out_depth_levels, 1, 1))
 
     def forward(
-        self, x: torch.Tensor, return_embedding: bool = False
+        self, x: torch.Tensor, return_embedding: bool = False, return_attention: bool = False
     ) -> Tuple[torch.Tensor, ...]:
         """
         Forward pass.
 
         Parameters:
         -----------
-        x : torch.Tensor — (B, 7, 101, 241)
-        return_embedding : bool — if True, also returns the (B, 256) latent vector
+        x : torch.Tensor — (B, in_channels, 101, 241)
+        return_embedding : bool — if True, returns (predictions, embedding)
+        return_attention : bool — if True, returns (predictions, attn_weights)
 
         Returns:
         --------
         predictions : (B, 15, 101, 241)
         embedding   : (B, 256)  — only if return_embedding=True
+        attention   : (B, num_heads, tokens, tokens) — only if return_attention=True
         """
         # --- Encoder ---
         s1, p1 = self.enc1(x)    # s1: (B,64,101,241)  p1: (B,64,50,120)
@@ -297,7 +304,10 @@ class OceanUNetViT(nn.Module):
 
         # --- Bottleneck ---
         b = self.bottleneck_conv(p4)   # (B, 512, 6, 15)
-        b = self.vit(b)                # Self-Attention over 6×15=90 ocean tokens
+        if return_attention:
+            b, attn_weights = self.vit(b, return_attention=True)
+        else:
+            b = self.vit(b, return_attention=False)
 
         # --- Compact Embedding ---
         embedding = self.embedding_proj(b)  # (B, 256)
@@ -308,11 +318,15 @@ class OceanUNetViT(nn.Module):
         d2 = self.dec2(d3, s2)   # (B, 64, 50, 120)
         d1 = self.dec1(d2, s1)   # (B, 64, 101, 241)
 
-        # --- Output Projection ---
-        predictions = self.output_head(d1)  # (B, 15, 101, 241)
+        # --- Output Projection + Depth Bias Correction ---
+        predictions = self.output_head(d1) + self.depth_bias  # (B, 15, 101, 241)
 
+        if return_embedding and return_attention:
+            return predictions, embedding, attn_weights
         if return_embedding:
             return predictions, embedding
+        if return_attention:
+            return predictions, attn_weights
         return predictions
 
     def get_embedding(self, x: torch.Tensor) -> torch.Tensor:

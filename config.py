@@ -34,20 +34,24 @@ TEMPORAL_RESOLUTION = "1D"   # Daily temporal resolution as required by spec
 DATE_FORMAT = "%Y-%m-%d"
 
 # ==============================================================================
-# 3. Input Surface Variables (7 Channels)
+# 3. Input Surface Variables (12 Physical & Thermodynamic Channels)
 # ==============================================================================
-# These are the satellite "clues" we feed INTO the neural network.
-# Order here determines the channel index in the tensor: (B, 7, H, W)
+# Order here determines the channel index in the tensor: (B, 12, H, W)
 INPUT_VARIABLES = [
-    "SST",      # Channel 0: Sea Surface Temperature (°C)
-    "SSS",      # Channel 1: Sea Surface Salinity (PSU)
-    "SSH",      # Channel 2: Sea Surface Height / Sea Level Anomaly (m)
-    "U_CUR",    # Channel 3: Surface Ocean Current - Zonal (East-West) component (m/s)
-    "V_CUR",    # Channel 4: Surface Ocean Current - Meridional (North-South) component (m/s)
-    "U_WIND",   # Channel 5: Surface Wind - Zonal component (m/s) at 10m height
-    "V_WIND",   # Channel 6: Surface Wind - Meridional component (m/s) at 10m height
+    "SST",           # Channel 0: Sea Surface Temperature (°C)
+    "SSS",           # Channel 1: Sea Surface Salinity (PSU)
+    "SSH",           # Channel 2: Sea Surface Height / Sea Level Anomaly (m)
+    "U_CUR",         # Channel 3: Surface Ocean Current - Zonal (East-West) (m/s)
+    "V_CUR",         # Channel 4: Surface Ocean Current - Meridional (North-South) (m/s)
+    "U_WIND",        # Channel 5: 10m Wind - Zonal component (m/s)
+    "V_WIND",        # Channel 6: 10m Wind - Meridional component (m/s)
+    "WIND_MAG",      # Channel 7: Mechanical Wind Stress / Mixing Magnitude (m/s)
+    "DOY_SIN",       # Channel 8: Seasonal Harmonic Component sin(2*pi*DOY/365)
+    "DOY_COS",       # Channel 9: Seasonal Harmonic Component cos(2*pi*DOY/365)
+    "SST_ANOM",      # Channel 10: Climatological Temporal SST Anomaly (°C)
+    "DENSITY_SIGMA0",# Channel 11: TEOS-10 Potential Density Anomaly sigma_0 (kg/m^3)
 ]
-N_INPUT_CHANNELS = len(INPUT_VARIABLES)  # 7
+N_INPUT_CHANNELS = len(INPUT_VARIABLES)  # 12
 
 # ==============================================================================
 # 4. Output Depth Levels (15 Levels)
@@ -123,42 +127,64 @@ COPERNICUS_DATASETS = {
 # 6. Normalization Statistics
 # ==============================================================================
 # Z-score parameters: normalized = (value - mean) / std
-# These are climatological approximations for the North Indian Ocean.
-# They will be overwritten if you compute statistics from real data.
 NORMALIZATION_STATS = {
-    "SST":    {"mean": 28.5,  "std": 2.5},    # °C
-    "SSS":    {"mean": 35.0,  "std": 1.5},    # PSU
-    "SSH":    {"mean": 0.0,   "std": 0.15},   # meters
-    "U_CUR":  {"mean": 0.0,   "std": 0.3},    # m/s
-    "V_CUR":  {"mean": 0.0,   "std": 0.3},    # m/s
-    "U_WIND": {"mean": 0.0,   "std": 5.0},    # m/s
-    "V_WIND": {"mean": 0.0,   "std": 5.0},    # m/s
-    # Target variable normalization (per depth, simplified to surface-reference)
-    "TEMP_TARGET": {"mean": 16.0, "std": 10.0},  # °C (average across all depths)
+    "SST":            {"mean": 28.5,  "std": 2.5},    # °C
+    "SSS":            {"mean": 35.0,  "std": 1.5},    # PSU
+    "SSH":            {"mean": 0.0,   "std": 0.15},   # meters
+    "U_CUR":          {"mean": 0.0,   "std": 0.3},    # m/s
+    "V_CUR":          {"mean": 0.0,   "std": 0.3},    # m/s
+    "U_WIND":         {"mean": 0.0,   "std": 5.0},    # m/s
+    "V_WIND":         {"mean": 0.0,   "std": 5.0},    # m/s
+    "WIND_MAG":       {"mean": 6.0,   "std": 3.5},    # m/s
+    "DOY_SIN":        {"mean": 0.0,   "std": 0.707},  # dimensionless
+    "DOY_COS":        {"mean": 0.0,   "std": 0.707},  # dimensionless
+    "SST_ANOM":       {"mean": 0.0,   "std": 1.0},    # °C
+    "DENSITY_SIGMA0": {"mean": 22.5,  "std": 1.5},    # kg/m^3 (TEOS-10 surface potential density)
+    "TEMP_TARGET":    {"mean": 16.0,  "std": 10.0},
 }
+
+# Per-Depth Target Normalization Stats (Feature 3)
+# Based on physical North Indian Ocean thermocline depth distributions
+TEMP_TARGET_STATS_PER_DEPTH = [
+    {"depth_m": 0,    "mean": 29.0, "std": 2.5},
+    {"depth_m": 5,    "mean": 28.8, "std": 2.5},
+    {"depth_m": 10,   "mean": 28.5, "std": 2.6},
+    {"depth_m": 20,   "mean": 28.2, "std": 2.8},
+    {"depth_m": 30,   "mean": 27.8, "std": 3.0},
+    {"depth_m": 50,   "mean": 26.5, "std": 3.8},  # Top of thermocline - higher variance
+    {"depth_m": 75,   "mean": 24.5, "std": 4.5},
+    {"depth_m": 100,  "mean": 22.0, "std": 5.0},  # Core thermocline - highest dynamic variance
+    {"depth_m": 125,  "mean": 19.5, "std": 4.5},
+    {"depth_m": 150,  "mean": 17.5, "std": 3.8},
+    {"depth_m": 200,  "mean": 15.5, "std": 3.0},
+    {"depth_m": 300,  "mean": 12.5, "std": 2.2},
+    {"depth_m": 500,  "mean": 10.5, "std": 1.5},
+    {"depth_m": 700,  "mean": 9.5,  "std": 1.2},
+    {"depth_m": 1000, "mean": 7.0,  "std": 0.8},  # Abyssal water - low variance
+]
 
 # ==============================================================================
 # 7. Training Hyperparameters (Defaults)
 # ==============================================================================
 TRAINING = {
     "batch_size": 4,
-    "learning_rate": 1e-3,
+    "learning_rate": 3e-4,
     "weight_decay": 1e-4,
-    "epochs": 30,
-    "val_split": 0.2,       # 20% of data reserved for validation
+    "epochs": 20,
+    "val_split": 0.2,
     "random_seed": 42,
     "checkpoint_dir": "./checkpoints",
-    "log_interval": 5,      # Print metrics every N epochs
+    "log_interval": 5,
 }
 
 # ==============================================================================
 # 8. Model Architecture Defaults
 # ==============================================================================
 MODEL = {
-    "in_channels": N_INPUT_CHANNELS,     # 7 input surface channels
+    "in_channels": 12,                   # 12 pure physical & thermodynamic channels
     "out_depth_levels": N_DEPTH_LEVELS,  # 15 standard output depths
-    "base_filters": 64,                  # Upscaled from 32 → 64 for 7-channel input
-    "vit_heads": 8,                      # Increased to 8 for richer attention
+    "base_filters": 64,
+    "vit_heads": 8,
     "vit_mlp_ratio": 4.0,
-    "embedding_dim": 256,                # Latent embedding vector size
+    "embedding_dim": 256,
 }

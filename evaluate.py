@@ -56,19 +56,17 @@ def compute_depth_rmse(
     targets: np.ndarray,
 ) -> np.ndarray:
     """
-    Computes RMSE (Root Mean Square Error) at each of the 15 depth levels.
-
-    Parameters:
-    -----------
-    predictions : np.ndarray — shape (N, 15, H, W) in °C
-    targets     : np.ndarray — shape (N, 15, H, W) in °C
-
-    Returns:
-    --------
-    rmse_per_depth : np.ndarray — shape (15,) in °C
+    Computes RMSE (Root Mean Square Error) at each depth level over valid ocean points.
     """
-    diff_sq = (predictions - targets) ** 2  # (N, 15, H, W)
-    return np.sqrt(diff_sq.mean(axis=(0, 2, 3)))  # (15,)
+    rmse_per_depth = np.zeros(N_DEPTH_LEVELS)
+    for d in range(N_DEPTH_LEVELS):
+        diff = predictions[:, d] - targets[:, d]
+        valid = ~np.isnan(diff)
+        if valid.any():
+            rmse_per_depth[d] = np.sqrt(np.mean(diff[valid] ** 2))
+        else:
+            rmse_per_depth[d] = 0.0
+    return rmse_per_depth
 
 
 def compute_depth_bias(
@@ -76,14 +74,17 @@ def compute_depth_bias(
     targets: np.ndarray,
 ) -> np.ndarray:
     """
-    Computes BIAS (Mean Signed Error) at each depth level.
-
-    Positive bias = model systematically predicts TOO WARM.
-    Negative bias = model systematically predicts TOO COLD.
-
-    Returns shape (15,) in °C.
+    Computes BIAS (Mean Signed Error) at each depth level over valid ocean points.
     """
-    return (predictions - targets).mean(axis=(0, 2, 3))  # (15,)
+    bias_per_depth = np.zeros(N_DEPTH_LEVELS)
+    for d in range(N_DEPTH_LEVELS):
+        diff = predictions[:, d] - targets[:, d]
+        valid = ~np.isnan(diff)
+        if valid.any():
+            bias_per_depth[d] = np.mean(diff[valid])
+        else:
+            bias_per_depth[d] = 0.0
+    return bias_per_depth
 
 
 def compute_depth_correlation(
@@ -91,29 +92,25 @@ def compute_depth_correlation(
     targets: np.ndarray,
 ) -> np.ndarray:
     """
-    Computes Pearson spatial correlation coefficient at each depth level.
-
-    A correlation of 1.0 = perfect spatial pattern match.
-    A correlation of 0.0 = random / no skill.
-
-    Returns shape (15,) correlation coefficients.
+    Computes Pearson spatial correlation coefficient at each depth level over valid ocean points.
     """
-    N = predictions.shape[0]
     correlations = np.zeros(N_DEPTH_LEVELS)
-
     for d in range(N_DEPTH_LEVELS):
-        pred_d = predictions[:, d].flatten()  # (N × H × W,)
-        targ_d = targets[:, d].flatten()
-
-        # Remove mean (center the data)
-        pred_centered = pred_d - pred_d.mean()
-        targ_centered = targ_d - targ_d.mean()
-
-        numerator = (pred_centered * targ_centered).sum()
-        denominator = np.sqrt((pred_centered ** 2).sum() * (targ_centered ** 2).sum())
-
-        correlations[d] = numerator / (denominator + 1e-10)
-
+        p_d = predictions[:, d]
+        t_d = targets[:, d]
+        valid = (~np.isnan(p_d)) & (~np.isnan(t_d))
+        if valid.any():
+            pred_vals = p_d[valid]
+            targ_vals = t_d[valid]
+            p_mean = pred_vals.mean()
+            t_mean = targ_vals.mean()
+            p_cent = pred_vals - p_mean
+            t_cent = targ_vals - t_mean
+            num = np.sum(p_cent * t_cent)
+            den = np.sqrt(np.sum(p_cent ** 2) * np.sum(t_cent ** 2))
+            correlations[d] = num / (den + 1e-10) if den > 1e-10 else 0.0
+        else:
+            correlations[d] = 0.0
     return correlations
 
 

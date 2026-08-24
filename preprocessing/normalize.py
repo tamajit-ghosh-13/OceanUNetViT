@@ -30,7 +30,7 @@ NaN FILLING:
 """
 
 import numpy as np
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Union, List
 
 try:
     import xarray as xr
@@ -73,11 +73,12 @@ def normalize_inputs(
     normalized = data.copy().astype(np.float32)
     used_stats = {}
 
-    # Iterate over each of the 7 input channels
-    channel_axis = -3 if data.ndim == 4 else 0  # Handle both (7,H,W) and (T,7,H,W)
-    for ch_idx, var_name in enumerate(INPUT_VARIABLES):
+    # Number of channels present in the data
+    n_channels = data.shape[1] if data.ndim == 4 else data.shape[0]
+
+    for ch_idx in range(min(n_channels, len(INPUT_VARIABLES))):
+        var_name = INPUT_VARIABLES[ch_idx]
         if var_name not in stats:
-            print(f"⚠️  No normalization stats for '{var_name}'. Skipping (raw values kept).")
             used_stats[var_name] = {"mean": 0.0, "std": 1.0}
             continue
 
@@ -103,32 +104,49 @@ def normalize_inputs(
 # ==============================================================================
 def denormalize_outputs(
     predictions: np.ndarray,
-    stats: Optional[Dict[str, float]] = None,
+    stats: Optional[Union[Dict[str, float], List[Dict[str, float]]]] = None,
 ) -> np.ndarray:
     """
     Converts the model's normalized output back to physical temperature in °C.
-
-    The model predicts temperature in normalized (z-score) space.
-    To compare against real ARGO observations or GLORYS, we must invert normalization.
+    Supports both unified global stats and per-depth normalization stats (Feature 3).
 
     Parameters:
     -----------
     predictions : np.ndarray
-        Shape: (B, 15, H, W) — model output with 15 depth levels.
-    stats : dict, optional
-        {"mean": float, "std": float} for the target temperature variable.
-        Defaults to NORMALIZATION_STATS["TEMP_TARGET"].
+        Shape: (B, 15, H, W) or (15, H, W) — model output with 15 depth levels.
+    stats : dict or list of dicts, optional
+        If list of 15 dicts: applies per-depth (mean, std) individually.
+        If dict: applies global (mean, std).
+        Defaults to config.TEMP_TARGET_STATS_PER_DEPTH.
 
     Returns:
     --------
     np.ndarray in °C, same shape as input.
     """
-    if stats is None:
-        stats = NORMALIZATION_STATS["TEMP_TARGET"]
+    from config import TEMP_TARGET_STATS_PER_DEPTH, NORMALIZATION_STATS
 
-    mean = stats["mean"]
-    std  = stats["std"]
-    return predictions * std + mean
+    if stats is None:
+        stats = TEMP_TARGET_STATS_PER_DEPTH
+
+    denorm = predictions.copy()
+
+    # Per-depth normalization list (Feature 3)
+    if isinstance(stats, list) and len(stats) == 15:
+        for d_idx, d_stat in enumerate(stats):
+            m, s = d_stat["mean"], d_stat["std"]
+            if denorm.ndim == 4:
+                denorm[:, d_idx] = denorm[:, d_idx] * s + m
+            elif denorm.ndim == 3:
+                denorm[d_idx] = denorm[d_idx] * s + m
+        return denorm
+
+    # Fallback to single global dict
+    if isinstance(stats, dict):
+        mean = stats.get("mean", 16.0)
+        std  = stats.get("std", 10.0)
+        return denorm * std + mean
+
+    return denorm
 
 
 # ==============================================================================
@@ -161,8 +179,6 @@ def build_land_sea_mask(
     if method == "nan_based" and reference_field is not None:
         # Any grid cell that is NaN in the reference SST/SSH field is land
         ocean_mask = ~np.isnan(reference_field)
-        print(f"   Land-Sea Mask: {ocean_mask.sum():,} ocean cells / "
-              f"{ocean_mask.size:,} total ({100*ocean_mask.mean():.1f}% ocean)")
         return ocean_mask
 
     # Synthetic fallback mask (for offline testing)
@@ -369,7 +385,8 @@ def preprocess_inputs(
     # Step 1: Build land mask if not provided
     if mask is None:
         # Use first channel (SST) to detect land as NaN positions
-        mask = build_land_sea_mask(reference_field=raw_data[0], method="nan_based")
+        ref = raw_data[0, 0] if raw_data.ndim == 4 else (raw_data[0] if raw_data.ndim == 3 else raw_data)
+        mask = build_land_sea_mask(reference_field=ref, method="nan_based")
 
     # Step 2: Fill NaN values before normalization
     filled = fill_nans(raw_data, method=nan_fill_method)
