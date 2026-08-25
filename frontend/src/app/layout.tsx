@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "OceanEmbed | Realtime Neural AI & Python Backend",
-  description: "Next.js frontend with high-performance Python telemetry backend",
+  title: "OceanEmbed",
+  description: "Autonomous Innovations",
 };
 
 export default function RootLayout({
@@ -12,8 +12,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark h-full antialiased">
-      <body className="min-h-full bg-slate-950 text-slate-100 font-sans">
+    <html lang="en">
+      <head>
+        <link href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;600&family=JetBrains+Mono&family=Playfair+Display:wght@700&display=swap" rel="stylesheet" />
+        <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet" />
+        <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+      </head>
+      <body>
         {children}
       </body>
     </html>

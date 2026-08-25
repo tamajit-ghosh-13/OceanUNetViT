@@ -165,14 +165,14 @@ def generate_dynamic_cross_section_chart(req_lat: float, req_lon: float, sst: fl
 
     cf = ax.contourf(
         lons,
-        -depths,
+        depths,
         T_transect,
         levels=np.linspace(8.0, 32.0, 35),
         cmap="Spectral_r",
         extend="both"
     )
 
-    cs = ax.contour(lons, -depths, T_transect, levels=[20.0], colors=["black"], linewidths=[2.5])
+    cs = ax.contour(lons, depths, T_transect, levels=[20.0], colors=["black"], linewidths=[2.5])
     ax.clabel(cs, inline=True, fontsize=8, fmt="D20 (20°C)")
 
     # Marker for user's query longitude
@@ -184,6 +184,7 @@ def generate_dynamic_cross_section_chart(req_lat: float, req_lon: float, sst: fl
     ax.tick_params(colors="#94a3b8", labelsize=8)
     ax.legend(facecolor="#0f172a", edgecolor="#1e293b", labelcolor="#f8fafc", fontsize=7.5, loc="lower left")
 
+    ax.invert_yaxis()
     cbar = fig.colorbar(cf, ax=ax, orientation="vertical", pad=0.02, shrink=0.9)
     cbar.ax.tick_params(labelsize=7.5, colors="#94a3b8")
     cbar.set_label("Temperature (°C)", color="#94a3b8", fontsize=8)

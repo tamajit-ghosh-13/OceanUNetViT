@@ -1,0 +1,5 @@
+⚡ Apple Silicon MPS (Metal Performance Shaders) activated!
+🚀 Initializing OceanEmbed Live Inference Models on device: mps...
+✅ Live Dynamic Inference Server initialized successfully!
+/Users/tamajitghosh/Desktop/OceanEmbed/api_server.py:141: UserWarning: Glyph 129516 (\N{DNA DOUBLE HELIX}) missing from font(s) DejaVu Sans.
+  plt.savefig(buf, format="png", dpi=180, bbox_inches="tight", facecolor=fig.get_facecolor())

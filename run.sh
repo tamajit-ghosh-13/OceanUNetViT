@@ -34,7 +34,7 @@ trap cleanup SIGINT SIGTERM EXIT
 
 # 1. Start Python FastAPI Inference Engine
 echo "🧠 [1/2] Starting Python PyTorch FastAPI Inference Server on Port 8000..."
-python3 -m uvicorn api_server:app --host 0.0.0.0 --port 8000 --log-level info &
+./.venv/bin/python3 -m uvicorn api_server:app --host 0.0.0.0 --port 8000 --log-level info &
 API_PID=$!
 
 # Wait briefly for FastAPI to bind
