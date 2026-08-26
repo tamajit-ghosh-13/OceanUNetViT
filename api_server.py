@@ -144,53 +144,90 @@ def generate_dynamic_profile_chart(depth_series: list, req_lat: float, req_lon: 
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
-def generate_dynamic_cross_section_chart(req_lat: float, req_lon: float, sst: float, ssh: float, u_cur: float) -> str:
-    """Generates a dynamic 2D Zonal Transect Map reflecting user input physics."""
-    lons = np.linspace(BBOX["min_lon"], BBOX["max_lon"], 80)
-    depths = np.array(STANDARD_DEPTH_LEVELS_M)
 
-    # Physical synthetic synthesis across the longitude transect responding to user inputs
-    T_transect = np.zeros((len(depths), len(lons)))
-    for j, lon_val in enumerate(lons):
-        # Somali Upwelling shoaling near 50-60°E, Bay of Bengal deepening near 85-95°E
-        dist_factor = np.sin((lon_val - 45.0) / 60.0 * np.pi)
-        local_sst = sst + (1.2 if lon_val > 80 else -1.5) * dist_factor
-        for i, d in enumerate(depths):
-            therm_depth = 100.0 + ssh * 60.0 + (35.0 if lon_val > 80 else -30.0)
-            decay = 1.0 / (1.0 + np.exp((d - therm_depth) / 45.0))
-            T_transect[i, j] = 8.0 + (local_sst - 8.0) * decay
 
-    fig, ax = plt.subplots(figsize=(8.5, 3.8), facecolor="#020617", constrained_layout=True)
+def generate_shallow_thermal_column_chart(depth_series: list, req_lat: float, req_lon: float) -> str:
+    """Generates a vertical 1D thermal gradient column for Shallow Ocean (0-200m)."""
+    shallow = [d for d in depth_series if d["depth_m"] <= 200]
+    depths = np.array([d["depth_m"] for d in shallow])
+    t_vals = np.array([d["tribreed_degC"] for d in shallow])
+
+    dummy_x = np.array([0, 1])
+    T_col = np.tile(t_vals, (2, 1)).T
+
+    fig, ax = plt.subplots(figsize=(4.0, 6.0), facecolor="#020617")
+    fig.subplots_adjust(left=0.25, right=0.7, top=0.9, bottom=0.1)
     ax.set_facecolor("#090d1f")
 
-    cf = ax.contourf(
-        lons,
-        depths,
-        T_transect,
-        levels=np.linspace(8.0, 32.0, 35),
-        cmap="Spectral_r",
-        extend="both"
-    )
+    cf = ax.contourf(dummy_x, depths, T_col, levels=np.linspace(8.0, 32.0, 35), cmap="Spectral_r", extend="both")
 
-    cs = ax.contour(lons, depths, T_transect, levels=[20.0], colors=["black"], linewidths=[2.5])
-    ax.clabel(cs, inline=True, fontsize=8, fmt="D20 (20°C)")
+    # Highlight the D20 (20°C) isotherm
+    d20_depth = None
+    for i in range(len(depths)-1):
+        if (t_vals[i] >= 20.0 and t_vals[i+1] <= 20.0) or (t_vals[i] <= 20.0 and t_vals[i+1] >= 20.0):
+            frac = (20.0 - t_vals[i]) / (t_vals[i+1] - t_vals[i] + 1e-9)
+            d20_depth = depths[i] + frac * (depths[i+1] - depths[i])
+            break
+            
+    if d20_depth is not None:
+        ax.axhline(y=d20_depth, color="black", linestyle="-", linewidth=2.5)
+        ax.text(0.5, d20_depth, "D20 (20°C)", color="black", ha="center", va="bottom", fontsize=10, fontweight="bold", bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=2))
 
-    # Marker for user's query longitude
-    ax.axvline(x=req_lon, color="#00ffcc", linestyle="--", linewidth=2.0, label=f"User Query ({req_lon}°E)")
-
-    ax.set_title(f"Dynamic Zonal Transect at Lat {req_lat:.2f}°N [Arabian Sea ← India → Bay of Bengal]", color="#f8fafc", fontsize=10, fontweight="bold")
-    ax.set_xlabel("Longitude (°E)", color="#94a3b8", fontsize=8.5)
-    ax.set_ylabel("Depth (m)", color="#94a3b8", fontsize=8.5)
-    ax.tick_params(colors="#94a3b8", labelsize=8)
-    ax.legend(facecolor="#0f172a", edgecolor="#1e293b", labelcolor="#f8fafc", fontsize=7.5, loc="lower left")
-
+    ax.set_title(f"Shallow (0-200m)", color="#f8fafc", fontsize=12, fontweight="bold")
+    ax.set_xticks([])
+    ax.set_ylabel("Depth (m)", color="#94a3b8", fontsize=10)
+    ax.tick_params(colors="#94a3b8", labelsize=9)
     ax.invert_yaxis()
-    cbar = fig.colorbar(cf, ax=ax, orientation="vertical", pad=0.02, shrink=0.9)
-    cbar.ax.tick_params(labelsize=7.5, colors="#94a3b8")
-    cbar.set_label("Temperature (°C)", color="#94a3b8", fontsize=8)
+
+    cbar = fig.colorbar(cf, ax=ax, orientation="vertical", pad=0.04, shrink=0.9)
+    cbar.ax.tick_params(labelsize=8, colors="#94a3b8")
+    cbar.set_label("Temp (°C)", color="#94a3b8", fontsize=9)
 
     buf = io.BytesIO()
-    plt.savefig(buf, format="png", dpi=180, bbox_inches="tight", facecolor=fig.get_facecolor())
+    plt.savefig(buf, format="png", dpi=180, facecolor=fig.get_facecolor())
+    plt.close(fig)
+    buf.seek(0)
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("utf-8")
+
+def generate_deep_thermal_column_chart(depth_series: list, req_lat: float, req_lon: float) -> str:
+    """Generates a vertical 1D thermal gradient column for Deep Ocean (300-1000m)."""
+    deep = [d for d in depth_series if d["depth_m"] >= 300]
+    depths = np.array([d["depth_m"] for d in deep])
+    t_vals = np.array([d["tribreed_degC"] for d in deep])
+
+    dummy_x = np.array([0, 1])
+    T_col = np.tile(t_vals, (2, 1)).T
+
+    fig, ax = plt.subplots(figsize=(4.0, 6.0), facecolor="#020617")
+    fig.subplots_adjust(left=0.25, right=0.7, top=0.9, bottom=0.1)
+    ax.set_facecolor("#090d1f")
+
+    cf = ax.contourf(dummy_x, depths, T_col, levels=np.linspace(2.0, 15.0, 35), cmap="Spectral_r", extend="both")
+
+    # Highlight the D10 (10°C) isotherm
+    d10_depth = None
+    for i in range(len(depths)-1):
+        if (t_vals[i] >= 10.0 and t_vals[i+1] <= 10.0) or (t_vals[i] <= 10.0 and t_vals[i+1] >= 10.0):
+            frac = (10.0 - t_vals[i]) / (t_vals[i+1] - t_vals[i] + 1e-9)
+            d10_depth = depths[i] + frac * (depths[i+1] - depths[i])
+            break
+            
+    if d10_depth is not None:
+        ax.axhline(y=d10_depth, color="white", linestyle="--", linewidth=2.0)
+        ax.text(0.5, d10_depth, "D10 (10°C)", color="white", ha="center", va="bottom", fontsize=10, fontweight="bold", bbox=dict(facecolor='black', alpha=0.6, edgecolor='none', pad=2))
+
+    ax.set_title(f"Deep (300-1000m)", color="#f8fafc", fontsize=12, fontweight="bold")
+    ax.set_xticks([])
+    ax.set_ylabel("Depth (m)", color="#94a3b8", fontsize=10)
+    ax.tick_params(colors="#94a3b8", labelsize=9)
+    ax.invert_yaxis()
+
+    cbar = fig.colorbar(cf, ax=ax, orientation="vertical", pad=0.04, shrink=0.9)
+    cbar.ax.tick_params(labelsize=8, colors="#94a3b8")
+    cbar.set_label("Temp (°C)", color="#94a3b8", fontsize=9)
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png", dpi=180, facecolor=fig.get_facecolor())
     plt.close(fig)
     buf.seek(0)
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("utf-8")
@@ -287,7 +324,8 @@ def predict_subsurface_temperatures(req: OceanInferenceRequest):
 
         # Real-time Dynamic Charts
         dynamic_profile_img = generate_dynamic_profile_chart(depth_series, req.latitude, req.longitude)
-        dynamic_transect_img = generate_dynamic_cross_section_chart(req.latitude, req.longitude, req.sst, req.ssh, req.u_cur)
+        shallow_img = generate_shallow_thermal_column_chart(depth_series, req.latitude, req.longitude)
+        deep_img = generate_deep_thermal_column_chart(depth_series, req.latitude, req.longitude)
 
         return {
             "status": "SUCCESS",
@@ -312,7 +350,8 @@ def predict_subsurface_temperatures(req: OceanInferenceRequest):
             },
             "visualizations": {
                 "dynamic_profile_image": dynamic_profile_img,
-                "dynamic_transect_image": dynamic_transect_img,
+                "shallow_profile_image": shallow_img,
+                "deep_profile_image": deep_img,
             }
         }
 

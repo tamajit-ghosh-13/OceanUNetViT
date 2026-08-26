@@ -20,3 +20,4 @@ data/nc_downloads/
 # Copernicus Credentials & temp sidecars
 .copernicusmarine/
 graphify-out/
+tool/

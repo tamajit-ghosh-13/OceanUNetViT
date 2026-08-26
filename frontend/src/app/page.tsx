@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import Map, { Marker, NavigationControl } from "react-map-gl/maplibre";
+import Map, { Marker, NavigationControl, Source, Layer } from "react-map-gl/maplibre";
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
   Compass,
@@ -31,6 +31,25 @@ import {
   Navigation,
 } from "lucide-react";
 
+const GRATICULE_GEOJSON = (() => {
+  const features: any[] = [];
+  for (let lng = 40; lng <= 110; lng += 5) {
+    features.push({
+      type: "Feature",
+      properties: {},
+      geometry: { type: "LineString", coordinates: [[lng, 0], [lng, 35]] }
+    });
+  }
+  for (let lat = 0; lat <= 35; lat += 5) {
+    features.push({
+      type: "Feature",
+      properties: {},
+      geometry: { type: "LineString", coordinates: [[40, lat], [110, lat]] }
+    });
+  }
+  return { type: "FeatureCollection", features };
+})();
+
 export default function OceanEmbedDashboard() {
   const [activeTab, setActiveTab] = useState<
     "live_infer" | "overview" | "reconstruction" | "recommender" | "explainability" | "fingerprint" | "forecasting" | "benchmarks"
@@ -47,11 +66,14 @@ export default function OceanEmbedDashboard() {
   const [uWind, setUWind] = useState<number>(4.5);
   const [vWind, setVWind] = useState<number>(-2.1);
   const [doy, setDoy] = useState<number>(200);
+  const [year, setYear] = useState<number>(2026);
 
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [inferResults, setInferResults] = useState<any>(null);
 
   const [selectedDepth, setSelectedDepth] = useState<number>(100);
+  const [isTransectModalOpen, setIsTransectModalOpen] = useState<boolean>(false);
+  const [isThermalProfileModalOpen, setIsThermalProfileModalOpen] = useState<boolean>(false);
   const depths = [0, 5, 10, 20, 30, 50, 75, 100, 125, 150, 200, 300, 500, 700, 1000];
 
   // Presets
@@ -383,6 +405,18 @@ export default function OceanEmbedDashboard() {
                     }}
                     cursor="grab"
                   >
+                    <Source id="graticule" type="geojson" data={GRATICULE_GEOJSON}>
+                      <Layer 
+                        id="graticule-line" 
+                        type="line" 
+                        paint={{
+                          "line-color": "#06b6d4",
+                          "line-opacity": 0.6,
+                          "line-width": 1,
+                          "line-dasharray": [3, 3]
+                        }} 
+                      />
+                    </Source>
                     <NavigationControl position="bottom-right" />
                     
                     {!isNaN(lat) && !isNaN(lon) && (
@@ -419,8 +453,69 @@ export default function OceanEmbedDashboard() {
                   </div>
                 </div>
 
-                {/* Right: 7 Inputs + Button */}
+                {/* Right: 7 Inputs + Date Selector + Button */}
                 <div className="lg:w-1/4 flex flex-col gap-2">
+                  {/* Day of Year & Date Selector */}
+                  <div className="bg-surface-white border border-primary/40 shadow-sm p-3 space-y-2 relative overflow-hidden">
+                    <div className="flex justify-between items-center">
+                      <div className="flex gap-2 items-center">
+                        <Sparkles className="w-4 h-4 text-primary" />
+                        <span className="font-headline-md text-[14px] text-on-surface font-bold">Temporal Phase</span>
+                      </div>
+                      <span className="font-label-mono text-[11px] bg-primary/10 text-primary px-2 py-0.5 font-bold border border-primary-fixed-dim">
+                        DOY: {doy} / 365
+                      </span>
+                    </div>
+
+                    {/* Date Picker Input */}
+                    <div className="flex items-center justify-between gap-2 bg-surface-container-low px-2 py-1.5 border border-glass-border">
+                      <span className="font-body-sm text-[11px] text-text-muted">Observation Date:</span>
+                      <input
+                        type="date"
+                        value={(() => {
+                          const date = new Date(year, 0);
+                          date.setDate(doy);
+                          const y = date.getFullYear();
+                          const m = String(date.getMonth() + 1).padStart(2, '0');
+                          const d = String(date.getDate()).padStart(2, '0');
+                          return `${y}-${m}-${d}`;
+                        })()}
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            const [y, m, d] = e.target.value.split('-');
+                            const selected = new Date(parseInt(y), parseInt(m)-1, parseInt(d));
+                            setYear(selected.getFullYear());
+                            
+                            const start = new Date(selected.getFullYear(), 0, 0);
+                            const diff = (selected.getTime() - start.getTime()) + ((start.getTimezoneOffset() - selected.getTimezoneOffset()) * 60 * 1000);
+                            const oneDay = 1000 * 60 * 60 * 24;
+                            const calculatedDoy = Math.floor(diff / oneDay);
+                            setDoy(Math.min(Math.max(calculatedDoy, 1), 365));
+                          }
+                        }}
+                        className="bg-transparent font-label-mono text-xs text-primary font-bold outline-none cursor-pointer"
+                      />
+                    </div>
+
+                    {/* DOY Range Slider */}
+                    <div className="relative pt-1">
+                      <input
+                        type="range"
+                        min={1}
+                        max={365}
+                        step={1}
+                        value={doy}
+                        onChange={(e) => setDoy(parseInt(e.target.value))}
+                        className="w-full h-1 bg-surface-container-high appearance-none outline-none accent-primary"
+                      />
+                      <div className="flex justify-between text-[10px] font-label-mono text-text-muted mt-1">
+                        <span>Jan (Winter)</span>
+                        <span>Jul (SW Monsoon)</span>
+                        <span>Dec (NE Monsoon)</span>
+                      </div>
+                    </div>
+                  </div>
+
                   {[
                     { id: 1, label: 'SST', desc: 'Sea Surface Temperature', min: 15, max: 35, step: 0.1, val: sst, setVal: setSst, unit: '°C' },
                     { id: 2, label: 'SSS', desc: 'Sea Surface Salinity', min: 30, max: 40, step: 0.1, val: sss, setVal: setSss, unit: 'PSU' },
@@ -430,6 +525,7 @@ export default function OceanEmbedDashboard() {
                     { id: 6, label: 'U-WND', desc: 'Zonal Wind', min: -20, max: 20, step: 0.5, val: uWind, setVal: setUWind, unit: 'm/s' },
                     { id: 7, label: 'V-WND', desc: 'Meridional Wind', min: -20, max: 20, step: 0.5, val: vWind, setVal: setVWind, unit: 'm/s' },
                   ].map(inp => (
+
                     <div key={inp.id} className="bg-surface-white border border-glass-border p-3 space-y-2">
                       <div className="flex justify-between items-center">
                         <div className="flex gap-2 items-center">
@@ -511,7 +607,7 @@ export default function OceanEmbedDashboard() {
                     <div>
                       <h3 className="font-headline-md text-headline-md text-on-surface flex items-center gap-2">
                         <Activity className="w-5 h-5 text-primary" />
-                        Live Interactive Thermal Cross-Section
+                        Live Vertical Thermal Gradient Profile
                       </h3>
                       <p className="font-body-sm text-text-muted mt-1">Hover over the depth axis to inspect predicted stratification layers</p>
                     </div>
@@ -520,32 +616,75 @@ export default function OceanEmbedDashboard() {
                     </div>
                   </div>
                   
-                  <div className="relative w-full border border-glass-border bg-surface-container overflow-hidden group self-center max-w-5xl h-[650px]">
-                    <img 
-                      src={inferResults?.visualizations?.dynamic_transect_image ? inferResults.visualizations.dynamic_transect_image : "/assets/live_ocean_thermal_cross_section.png"}
-                      alt="Ocean Cross Section" 
-                      className="w-full h-full object-cover opacity-90 transition-opacity duration-300 group-hover:opacity-100"
-                    />
-                    
-                    {/* Interactive Depth Markers overlay */}
-                    <div className="absolute inset-y-0 right-0 w-1/3 flex flex-col justify-between py-6 pr-8">
-                      {depths.map(d => {
-                        const isSelected = selectedDepth === d;
-                        const temp = inferResults.depth_series.find((row: any) => row.depth_m === d)?.tribreed_degC;
-                        return (
-                          <div 
-                            key={d}
-                            onMouseEnter={() => setSelectedDepth(d)}
-                            onClick={() => setSelectedDepth(d)}
-                            className={`flex items-center justify-end gap-3 cursor-pointer group/item`}
-                          >
-                            <div className={`w-12 h-[2px] ${isSelected ? 'bg-primary' : 'bg-surface-white/40 group-hover/item:bg-primary/50'} transition-colors`} />
-                            <div className={`font-label-mono text-[12px] px-2 py-0.5 border shadow-sm transition-all min-w-[90px] text-right ${isSelected ? 'bg-primary text-on-primary border-primary scale-110 z-10' : 'bg-surface-white/90 text-on-surface border-glass-border'}`}>
-                              {d}m <span className="font-bold ml-1">{temp}°C</span>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full self-center max-w-6xl">
+                    {/* Shallow Ocean */}
+                    <div className="relative w-full border border-glass-border bg-surface-container overflow-hidden group h-[650px]">
+                      <img 
+                        src={inferResults?.visualizations?.shallow_profile_image ? inferResults.visualizations.shallow_profile_image : "/assets/live_ocean_thermal_cross_section.png"}
+                        alt="Shallow Ocean" 
+                        className="w-full h-full object-contain opacity-90 transition-opacity duration-300 group-hover:opacity-100"
+                      />
+                      
+                      {/* Interactive Depth Markers overlay */}
+                      <div className="absolute inset-y-0 right-0 w-1/2">
+                        {depths.filter(d => d <= 200).map(d => {
+                          const isSelected = selectedDepth === d;
+                          const temp = inferResults.depth_series.find((row: any) => row.depth_m === d)?.tribreed_degC;
+                          const topPercent = 10 + (d / 200) * 80;
+                          
+                          // Only stagger 0m, 5m, and 10m to prevent their specific overlap
+                          const rightOffset = d === 0 ? "right-4" : d === 5 ? "right-28" : d === 10 ? "right-52" : "right-8";
+                          const lineLength = d === 0 ? "w-4" : d === 5 ? "w-12" : d === 10 ? "w-20" : "w-8";
+                          
+                          return (
+                            <div 
+                              key={d}
+                              onMouseEnter={() => setSelectedDepth(d)}
+                              onClick={() => setSelectedDepth(d)}
+                              className={`absolute ${rightOffset} flex items-center justify-end gap-2 cursor-pointer group/item -translate-y-1/2 z-20`}
+                              style={{ top: `${topPercent}%` }}
+                            >
+                              <div className={`${lineLength} h-[2px] ${isSelected ? 'bg-primary' : 'bg-surface-white/80 group-hover/item:bg-primary'} transition-all`} />
+                              <div className={`font-label-mono text-[10px] px-1.5 py-0.5 border shadow-sm transition-all flex justify-between min-w-[75px] text-right ${isSelected ? 'bg-primary text-on-primary border-primary scale-110 shadow-md z-30' : 'bg-surface-white text-on-surface border-glass-border hover:bg-surface-white/90'}`}>
+                                <span>{d}m</span>
+                                <span className="font-bold ml-1">{temp}°C</span>
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Deep Ocean */}
+                    <div className="relative w-full border border-glass-border bg-surface-container overflow-hidden group h-[650px]">
+                      <img 
+                        src={inferResults?.visualizations?.deep_profile_image ? inferResults.visualizations.deep_profile_image : "/assets/live_ocean_thermal_cross_section.png"}
+                        alt="Deep Ocean" 
+                        className="w-full h-full object-contain opacity-90 transition-opacity duration-300 group-hover:opacity-100"
+                      />
+                      
+                      {/* Interactive Depth Markers overlay */}
+                      <div className="absolute inset-y-0 right-0 w-1/2">
+                        {depths.filter(d => d >= 300).map(d => {
+                          const isSelected = selectedDepth === d;
+                          const temp = inferResults.depth_series.find((row: any) => row.depth_m === d)?.tribreed_degC;
+                          const topPercent = 10 + ((d - 300) / 700) * 80;
+                          return (
+                            <div 
+                              key={d}
+                              onMouseEnter={() => setSelectedDepth(d)}
+                              onClick={() => setSelectedDepth(d)}
+                              className="absolute right-8 flex items-center justify-end gap-2 cursor-pointer group/item -translate-y-1/2"
+                              style={{ top: `${topPercent}%` }}
+                            >
+                              <div className={`w-8 h-[2px] ${isSelected ? 'bg-primary' : 'bg-surface-white/40 group-hover/item:bg-primary/50'} transition-colors`} />
+                              <div className={`font-label-mono text-[10px] px-1.5 py-0.5 border shadow-sm transition-all min-w-[75px] text-right ${isSelected ? 'bg-primary text-on-primary border-primary scale-110 z-10' : 'bg-surface-white/90 text-on-surface border-glass-border'}`}>
+                                {d}m <span className="font-bold ml-1">{temp}°C</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -560,7 +699,7 @@ export default function OceanEmbedDashboard() {
                           Predicted 3D Vertical Thermal Profile Across 15 Standard Depths
                         </h3>
                         <p className="font-body-sm text-body-sm text-text-muted">
-                          Ensemble blend: w(d)·Baseline + (1-w(d))·[v3 + v4]
+                          High-resolution vertical thermal mapping model
                         </p>
                       </div>
                       <span className="text-body-sm bg-primary-container text-on-primary-container text-primary border border-primary-fixed-dim px-3 py-1  font-label-mono text-label-mono">
@@ -573,20 +712,14 @@ export default function OceanEmbedDashboard() {
                         <thead className="bg-surface-container-high text-on-surface-variant">
                           <tr>
                             <th className="p-2.5">Depth</th>
-                            <th className="p-2.5">Baseline (7-ch)</th>
-                            <th className="p-2.5">v3 Physical (12-ch)</th>
-                            <th className="p-2.5">v4 Physics-Inf</th>
-                            <th className="p-2.5 text-primary font-bold bg-primary-container text-on-primary-container/40">Tri-Breeded 🧬</th>
-                            <th className="p-2.5">±2σ Band</th>
+                            <th className="p-2.5 text-primary font-bold bg-primary-container text-on-primary-container/40">Predicted Temperature 🧬</th>
+                            <th className="p-2.5">±2σ Band (Error)</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-glass-border bg-background text-on-surface/70 text-on-surface">
                           {inferResults.depth_series.map((row: any) => (
                             <tr key={row.depth_m} className="hover:bg-surface-container-high/40 transition-colors">
                               <td className="p-2.5 font-bold text-on-surface-variant">{row.depth_m} m</td>
-                              <td className="p-2.5 text-text-muted">{row.baseline_degC}°C</td>
-                              <td className="p-2.5 text-text-muted">{row.v3_degC}°C</td>
-                              <td className="p-2.5 text-text-muted">{row.v4_degC}°C</td>
                               <td className="p-2.5 font-extrabold text-primary bg-primary-container text-on-primary-container/30 text-body-lg">
                                 {row.tribreed_degC}°C
                               </td>
@@ -599,36 +732,36 @@ export default function OceanEmbedDashboard() {
                   </div>
 
                   {/* Right Column: Physical Ocean Indicators & Visual Curve */}
-                  <div className="space-y-4">
+                  <div className="flex flex-col gap-4 h-full">
                     {/* Ocean Feature KPI Summary */}
-                    <div className="bg-surface-white shadow-sm border border-glass-border/70 border border-glass-border p-5  space-y-3">
-                      <h4 className="text-body-sm font-bold uppercase tracking-wider text-text-muted">
+                    <div className="bg-surface-white shadow-sm border border-glass-border p-5 flex flex-col justify-between flex-1">
+                      <h4 className="text-body-sm font-bold uppercase tracking-wider text-text-muted mb-4">
                         Derived Oceanographic Diagnostics
                       </h4>
 
-                      <div className="space-y-2">
-                        <div className="bg-background text-on-surface p-3  border border-glass-border flex justify-between items-center">
+                      <div className="space-y-3 flex-1 flex flex-col justify-center">
+                        <div className="bg-background text-on-surface p-4 border border-glass-border flex justify-between items-center">
                           <span className="font-body-sm text-body-sm text-text-muted">Thermocline Depth (D20):</span>
                           <span className="font-headline-md text-headline-md text-primary font-label-mono text-label-mono">
                             {inferResults.ocean_metrics.thermocline_d20_depth_m} m
                           </span>
                         </div>
 
-                        <div className="bg-background text-on-surface p-3  border border-glass-border flex justify-between items-center">
+                        <div className="bg-background text-on-surface p-4 border border-glass-border flex justify-between items-center">
                           <span className="font-body-sm text-body-sm text-text-muted">Mixed Layer Depth (MLD):</span>
                           <span className="font-headline-md text-headline-md text-tertiary font-label-mono text-label-mono">
                             {inferResults.ocean_metrics.mixed_layer_depth_m} m
                           </span>
                         </div>
 
-                        <div className="bg-background text-on-surface p-3  border border-glass-border flex justify-between items-center">
+                        <div className="bg-background text-on-surface p-4 border border-glass-border flex justify-between items-center">
                           <span className="font-body-sm text-body-sm text-text-muted">Upper Ocean Heat Content:</span>
                           <span className="font-headline-md text-headline-md text-outline font-label-mono text-label-mono">
                             {inferResults.ocean_metrics.ocean_heat_content_kj_cm2} kJ/cm²
                           </span>
                         </div>
 
-                        <div className="bg-background text-on-surface p-3  border border-glass-border flex justify-between items-center">
+                        <div className="bg-background text-on-surface p-4 border border-glass-border flex justify-between items-center">
                           <span className="font-body-sm text-body-sm text-text-muted">Buoyancy Potential Density:</span>
                           <span className="font-headline-md text-headline-md text-secondary font-label-mono text-label-mono">
                             {inferResults.inputs.potential_density_sigma0} kg/m³
@@ -637,156 +770,24 @@ export default function OceanEmbedDashboard() {
                       </div>
                     </div>
 
-                    {/* Live Dynamic Temperature vs Depth Profile Curve (Interactive Pure Vector SVG) */}
-                    <div className="bg-surface-white shadow-sm border border-glass-border/70 border border-glass-border p-4  space-y-2">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-body-sm font-bold text-on-surface flex items-center gap-1.5">
-                          <Activity className="w-3.5 h-3.5 text-primary" />
-                          Dynamic Vertical Thermal Profile (0m - 1000m)
-                        </h4>
-                        <span className="text-[11px] bg-primary-container text-on-primary-container text-primary border border-primary-fixed-dim px-2 py-0.5  font-label-mono text-label-mono">
-                          LIVE SVG
-                        </span>
-                      </div>
-
-                      {/* Pure Interactive SVG Renderer */}
-                      <div className=" border border-glass-border bg-background text-on-surface p-3">
-                        <svg viewBox="0 0 320 220" className="w-full h-44 overflow-visible">
-                          {/* Grid lines */}
-                          <line x1="45" y1="20" x2="305" y2="20" stroke="#1e293b" strokeDasharray="3,3" />
-                          <line x1="45" y1="65" x2="305" y2="65" stroke="#1e293b" strokeDasharray="3,3" />
-                          <line x1="45" y1="110" x2="305" y2="110" stroke="#1e293b" strokeDasharray="3,3" />
-                          <line x1="45" y1="155" x2="305" y2="155" stroke="#1e293b" strokeDasharray="3,3" />
-                          <line x1="45" y1="195" x2="305" y2="195" stroke="#334155" />
-
-                          {/* Axes */}
-                          <line x1="45" y1="20" x2="45" y2="195" stroke="#334155" />
-                          <text x="40" y="24" fill="#64748b" fontSize="8" textAnchor="end">0m</text>
-                          <text x="40" y="70" fill="#64748b" fontSize="8" textAnchor="end">100m</text>
-                          <text x="40" y="115" fill="#64748b" fontSize="8" textAnchor="end">300m</text>
-                          <text x="40" y="160" fill="#64748b" fontSize="8" textAnchor="end">700m</text>
-                          <text x="40" y="198" fill="#64748b" fontSize="8" textAnchor="end">1000m</text>
-
-                          <text x="45" y="210" fill="#64748b" fontSize="8" textAnchor="middle">5°C</text>
-                          <text x="110" y="210" fill="#64748b" fontSize="8" textAnchor="middle">15°C</text>
-                          <text x="175" y="210" fill="#64748b" fontSize="8" textAnchor="middle">25°C</text>
-                          <text x="240" y="210" fill="#64748b" fontSize="8" textAnchor="middle">30°C</text>
-                          <text x="300" y="210" fill="#64748b" fontSize="8" textAnchor="middle">35°C</text>
-
-                          {/* Confidence Band Polygon */}
-                          {(() => {
-                            const ptsTop = inferResults.depth_series.map((ds: any) => {
-                              const y = 20 + (Math.sqrt(ds.depth_m / 1000) * 175);
-                              const tHigh = ds.tribreed_degC + 2 * ds.confidence_std;
-                              const x = Math.min(305, Math.max(45, 45 + ((tHigh - 5) / 30) * 260));
-                              return `${x},${y}`;
-                            });
-                            const ptsBottom = [...inferResults.depth_series].reverse().map((ds: any) => {
-                              const y = 20 + (Math.sqrt(ds.depth_m / 1000) * 175);
-                              const tLow = ds.tribreed_degC - 2 * ds.confidence_std;
-                              const x = Math.min(305, Math.max(45, 45 + ((tLow - 5) / 30) * 260));
-                              return `${x},${y}`;
-                            });
-                            return (
-                              <polygon
-                                points={`${ptsTop.join(" ")} ${ptsBottom.join(" ")}`}
-                                fill="#06b6d4"
-                                fillOpacity="0.18"
-                              />
-                            );
-                          })()}
-
-                          {/* Baseline Polyline */}
-                          <polyline
-                            fill="none"
-                            stroke="#64748b"
-                            strokeWidth="1.2"
-                            strokeDasharray="3,2"
-                            points={inferResults.depth_series
-                              .map((ds: any) => {
-                                const y = 20 + (Math.sqrt(ds.depth_m / 1000) * 175);
-                                const x = Math.min(305, Math.max(45, 45 + ((ds.baseline_degC - 5) / 30) * 260));
-                                return `${x},${y}`;
-                              })
-                              .join(" ")}
-                          />
-
-                          {/* v4 Physics Polyline */}
-                          <polyline
-                            fill="none"
-                            stroke="#3b82f6"
-                            strokeWidth="1.2"
-                            strokeDasharray="2,2"
-                            points={inferResults.depth_series
-                              .map((ds: any) => {
-                                const y = 20 + (Math.sqrt(ds.depth_m / 1000) * 175);
-                                const x = Math.min(305, Math.max(45, 45 + ((ds.v4_degC - 5) / 30) * 260));
-                                return `${x},${y}`;
-                              })
-                              .join(" ")}
-                          />
-
-                          {/* Tri-Breeded Main Polyline */}
-                          <polyline
-                            fill="none"
-                            stroke="#22d3ee"
-                            strokeWidth="2.5"
-                            points={inferResults.depth_series
-                              .map((ds: any) => {
-                                const y = 20 + (Math.sqrt(ds.depth_m / 1000) * 175);
-                                const x = Math.min(305, Math.max(45, 45 + ((ds.tribreed_degC - 5) / 30) * 260));
-                                return `${x},${y}`;
-                              })
-                              .join(" ")}
-                          />
-
-                          {/* Data points */}
-                          {inferResults.depth_series.map((ds: any, idx: number) => {
-                            const y = 20 + (Math.sqrt(ds.depth_m / 1000) * 175);
-                            const x = Math.min(305, Math.max(45, 45 + ((ds.tribreed_degC - 5) / 30) * 260));
-                            return (
-                              <circle
-                                key={idx}
-                                cx={x}
-                                cy={y}
-                                r="2.5"
-                                fill="#22d3ee"
-                                stroke="#020617"
-                                strokeWidth="1"
-                              />
-                            );
-                          })}
-                        </svg>
-
-                        {/* Legend */}
-                        <div className="flex items-center justify-center gap-4 text-[11px] font-label-mono text-label-mono text-text-muted pt-1 border-t border-glass-border/80">
-                          <span className="flex items-center gap-1">
-                            <span className="w-3 h-0.5 bg-outline inline-block border-t border-dashed"></span> Baseline
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <span className="w-3 h-0.5 bg-tertiary inline-block"></span> v4 Physics
-                          </span>
-                          <span className="flex items-center gap-1 font-bold text-primary">
-                            <span className="w-3 h-1 bg-primary-fixed  inline-block"></span> Tri-Breed 🧬
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Live Dynamic Zonal Transect Map (Interactive SVG with Real-time Isotherm D20 & Query Marker) */}
-                    <div className="bg-surface-white shadow-sm border border-glass-border/70 border border-glass-border p-4  space-y-2">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-body-sm font-bold text-on-surface flex items-center gap-1.5">
+                    {/* Live Dynamic Zonal Transect Map */}
+                    <div 
+                      className="bg-surface-white shadow-sm border border-glass-border p-5 flex flex-col flex-1 cursor-pointer hover:border-primary/50 transition-colors group"
+                      onClick={() => setIsTransectModalOpen(true)}
+                    >
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="text-body-sm font-bold text-on-surface flex items-center gap-1.5 group-hover:text-primary transition-colors">
                           <Radio className="w-3.5 h-3.5 text-primary" />
                           Dynamic Zonal Transect Map ({lat}°N Transect)
+                          <span className="ml-2 text-[10px] bg-surface-container px-2 py-0.5 rounded text-text-muted hidden group-hover:inline-block">Click to Expand</span>
                         </h4>
                         <span className="text-[11px] bg-primary-container text-on-primary-container text-primary border border-primary-fixed-dim px-2 py-0.5  font-label-mono text-label-mono">
                           QUERY: {lon}°E
                         </span>
                       </div>
 
-                      <div className=" border border-glass-border bg-background text-on-surface p-2 relative overflow-hidden">
-                        {/* Interactive Dynamic SVG Transect */}
+                      <div className="border border-glass-border bg-background text-on-surface p-2 relative overflow-hidden flex-1 flex flex-col justify-center">
+                        <div className="w-full">
                         <svg viewBox="0 0 320 120" className="w-full h-32 ">
                           <defs>
                             <linearGradient id="oceanGradient" x1="0" y1="0" x2="0" y2="1">
@@ -852,14 +853,141 @@ export default function OceanEmbedDashboard() {
                             );
                           })()}
                         </svg>
-
-                        <div className="flex justify-between text-[9px] font-label-mono text-label-mono text-text-muted px-1 pt-1.5">
+                        </div>
+                        <div className="flex justify-between text-[10px] font-label-mono text-label-mono text-text-muted px-1 mt-2">
                           <span>45°E (Somali Basin)</span>
                           <span>75°E (Central Front)</span>
                           <span>105°E (Bay of Bengal)</span>
                         </div>
                       </div>
                     </div>
+                  </div>
+                </div>
+
+                {/* Full-width Depth vs Temperature AI Prediction vs Climatology Chart */}
+                <div 
+                  className="bg-surface-white shadow-sm border border-glass-border p-5 mt-6 cursor-pointer hover:border-primary/50 transition-colors group"
+                  onClick={() => setIsThermalProfileModalOpen(true)}
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-body-sm font-bold text-on-surface flex items-center gap-1.5 group-hover:text-primary transition-colors">
+                      <Thermometer className="w-4 h-4 text-primary" />
+                      Predicted AI Thermal Profile vs. Climatological Baseline
+                      <span className="ml-2 text-[10px] bg-surface-container px-2 py-0.5 rounded text-text-muted hidden group-hover:inline-block">Click to Expand</span>
+                    </h4>
+                    <div className="flex items-center gap-4 text-[11px] font-label-mono text-text-muted">
+                      <span className="flex items-center gap-1.5">
+                        <div className="w-3 h-0.5 bg-[#64748b]"></div> Climatology Avg
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <div className="w-3 h-0.5 bg-[#22d3ee]"></div> Tri-Breed AI Prediction
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="border border-glass-border bg-background text-on-surface p-4 relative overflow-hidden">
+                                        <svg viewBox="0 0 1000 400" className="w-full h-[400px] overflow-visible">
+                      {/* Grid Lines - X Axis (Temperature) */}
+                      {[5, 10, 15, 20, 25, 30, 35].map((temp, i) => {
+                        const x = 60 + (i / 6) * 900;
+                        return (
+                          <g key={temp}>
+                            <line x1={x} y1="20" x2={x} y2="360" stroke="#1e293b" strokeDasharray="3,3" />
+                            <text x={x} y="380" fill="#64748b" fontSize="12" textAnchor="middle">{temp}°C</text>
+                          </g>
+                        );
+                      })}
+
+                      {/* Grid Lines - Y Axis (Depth) */}
+                      {[0, 100, 300, 500, 1000].map((depth) => {
+                        const y = 20 + (Math.sqrt(depth / 1000) * 340);
+                        return (
+                          <g key={depth}>
+                            <line x1="60" y1={y} x2="960" y2={y} stroke="#1e293b" strokeDasharray="3,3" />
+                            <text x="50" y={y + 4} fill="#64748b" fontSize="12" textAnchor="end">{depth}m</text>
+                          </g>
+                        );
+                      })}
+                      
+                      {/* Axis Lines */}
+                      <line x1="60" y1="20" x2="60" y2="360" stroke="#334155" strokeWidth="2" />
+                      <line x1="60" y1="360" x2="960" y2="360" stroke="#334155" strokeWidth="2" />
+
+                      {/* AI Confidence Band Polygon */}
+                      {(() => {
+                        const ptsTop = inferResults.depth_series.map((ds: any) => {
+                          const y = 20 + (Math.sqrt(ds.depth_m / 1000) * 340);
+                          const tHigh = ds.tribreed_degC + 2 * ds.confidence_std;
+                          const x = Math.min(960, Math.max(60, 60 + ((tHigh - 5) / 30) * 900));
+                          return `${x},${y}`;
+                        });
+                        const ptsBottom = [...inferResults.depth_series].reverse().map((ds: any) => {
+                          const y = 20 + (Math.sqrt(ds.depth_m / 1000) * 340);
+                          const tLow = ds.tribreed_degC - 2 * ds.confidence_std;
+                          const x = Math.min(960, Math.max(60, 60 + ((tLow - 5) / 30) * 900));
+                          return `${x},${y}`;
+                        });
+                        return (
+                          <polygon
+                            points={`${ptsTop.join(" ")} ${ptsBottom.join(" ")}`}
+                            fill="#06b6d4"
+                            fillOpacity="0.15"
+                          />
+                        );
+                      })()}
+
+                      {/* Climatological Baseline Polyline */}
+                      <polyline
+                        fill="none"
+                        stroke="#64748b"
+                        strokeWidth="2.5"
+                        strokeDasharray="5,5"
+                        points={inferResults.depth_series
+                          .map((ds: any) => {
+                            const y = 20 + (Math.sqrt(ds.depth_m / 1000) * 340);
+                            const x = Math.min(960, Math.max(60, 60 + ((ds.baseline_degC - 5) / 30) * 900));
+                            return `${x},${y}`;
+                          })
+                          .join(" ")}
+                      />
+
+                      {/* Tri-Breeded AI Prediction Polyline */}
+                      <polyline
+                        fill="none"
+                        stroke="#22d3ee"
+                        strokeWidth="3.5"
+                        points={inferResults.depth_series
+                          .map((ds: any) => {
+                            const y = 20 + (Math.sqrt(ds.depth_m / 1000) * 340);
+                            const x = Math.min(960, Math.max(60, 60 + ((ds.tribreed_degC - 5) / 30) * 900));
+                            return `${x},${y}`;
+                          })
+                          .join(" ")}
+                      />
+
+                      {/* Data Points */}
+                      {inferResults.depth_series.map((ds: any, idx: number) => {
+                        const y = 20 + (Math.sqrt(ds.depth_m / 1000) * 340);
+                        const x = Math.min(960, Math.max(60, 60 + ((ds.tribreed_degC - 5) / 30) * 900));
+                        return (
+                          <circle
+                            key={`pt-${idx}`}
+                            cx={x}
+                            cy={y}
+                            r="5"
+                            fill="#020617"
+                            stroke="#22d3ee"
+                            strokeWidth="2"
+                            className="cursor-pointer hover:stroke-white transition-colors"
+                          >
+                            <title>{`Depth: ${ds.depth_m}m
+Pred: ${ds.tribreed_degC}°C
+Avg: ${ds.baseline_degC}°C
+Diff: ${(ds.tribreed_degC - ds.baseline_degC).toFixed(2)}°C`}</title>
+                          </circle>
+                        );
+                      })}
+                    </svg>
                   </div>
                 </div>
                 </>
@@ -1198,7 +1326,225 @@ export default function OceanEmbedDashboard() {
               </div>
             </div>
           )}
-        </main>
+        
+      {isTransectModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#020617]/80 backdrop-blur-sm p-4" onClick={() => setIsTransectModalOpen(false)}>
+          <div className="bg-surface-white border border-glass-border p-6 w-full max-w-5xl shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <h4 className="text-2xl font-bold text-on-surface flex items-center gap-3">
+                <Radio className="w-6 h-6 text-primary" />
+                Dynamic Zonal Transect Map ({lat}°N Transect)
+              </h4>
+              <button onClick={() => setIsTransectModalOpen(false)} className="text-text-muted hover:text-primary text-2xl px-2">
+                ✕
+              </button>
+            </div>
+            <div className="bg-background border border-glass-border p-4">
+              <svg viewBox="0 0 320 120" className="w-full h-[400px] ">
+                          <defs>
+                            <linearGradient id="oceanGradient" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#f43f5e" />
+                              <stop offset="15%" stopColor="#fb923c" />
+                              <stop offset="35%" stopColor="#facc15" />
+                              <stop offset="55%" stopColor="#38bdf8" />
+                              <stop offset="80%" stopColor="#3b82f6" />
+                              <stop offset="100%" stopColor="#1e1b4b" />
+                            </linearGradient>
+                          </defs>
+
+                          {/* Ocean background with depth gradient */}
+                          <rect x="0" y="0" width="320" height="120" fill="url(#oceanGradient)" opacity="0.85" />
+
+                          {/* Dynamic Isotherm D20 line based on SSH & Location */}
+                          {(() => {
+                            const d20Depth = inferResults.ocean_metrics.thermocline_d20_depth_m;
+                            const d20Y = Math.min(105, Math.max(25, (d20Depth / 1000) * 120 + 20));
+                            // Shape transect curve: Somali shoals on left, Bay of Bengal deepens on right
+                            const pathData = `M 0,${d20Y - 15} Q 80,${d20Y - 25} 160,${d20Y} T 320,${d20Y + 20}`;
+                            return (
+                              <>
+                                <path
+                                  d={pathData}
+                                  fill="none"
+                                  stroke="#000000"
+                                  strokeWidth="2.5"
+                                />
+                                <text x="10" y={Math.max(16, d20Y - 20)} fill="#ffffff" fontSize="8" fontWeight="bold">
+                                  D20 Isotherm ({d20Depth}m)
+                                </text>
+                              </>
+                            );
+                          })()}
+
+                          {/* Query Longitude Marker */}
+                          {(() => {
+                            const markerX = Math.min(310, Math.max(10, ((lon - 45) / 60) * 320));
+                            return (
+                              <g>
+                                <line
+                                  x1={markerX}
+                                  y1="0"
+                                  x2={markerX}
+                                  y2="120"
+                                  stroke="#22d3ee"
+                                  strokeWidth="2.5"
+                                  strokeDasharray="4,3"
+                                />
+                                <circle cx={markerX} cy="10" r="4" fill="#22d3ee" stroke="#020617" strokeWidth="1.5" />
+                                <text
+                                  x={markerX > 250 ? markerX - 6 : markerX + 6}
+                                  y="14"
+                                  fill="#22d3ee"
+                                  fontSize="8"
+                                  fontWeight="bold"
+                                  textAnchor={markerX > 250 ? "end" : "start"}
+                                >
+                                  {lon}°E
+                                </text>
+                              </g>
+                            );
+                          })()}
+                        </svg>
+              <div className="flex justify-between text-xs font-label-mono text-label-mono text-text-muted px-2 mt-4">
+                <span>45°E (Somali Basin)</span>
+                <span>75°E (Central Front)</span>
+                <span>105°E (Bay of Bengal)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isThermalProfileModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#020617]/80 backdrop-blur-sm p-4" onClick={() => setIsThermalProfileModalOpen(false)}>
+          <div className="bg-surface-white border border-glass-border p-6 w-full max-w-6xl shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <h4 className="text-2xl font-bold text-on-surface flex items-center gap-3">
+                <Thermometer className="w-6 h-6 text-primary" />
+                Predicted AI Thermal Profile vs. Climatological Baseline
+              </h4>
+              <div className="flex items-center gap-6">
+                <div className="flex items-center gap-4 text-xs font-label-mono text-text-muted">
+                  <span className="flex items-center gap-1.5">
+                    <div className="w-4 h-1 bg-[#64748b]"></div> Climatology Avg
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <div className="w-4 h-1 bg-[#22d3ee]"></div> Tri-Breed AI Prediction
+                  </span>
+                </div>
+                <button onClick={() => setIsThermalProfileModalOpen(false)} className="text-text-muted hover:text-primary text-2xl px-2">
+                  ✕
+                </button>
+              </div>
+            </div>
+            <div className="bg-background border border-glass-border p-6">
+                                  <svg viewBox="0 0 1000 400" className="w-full h-[600px] overflow-visible">
+                      {/* Grid Lines - X Axis (Temperature) */}
+                      {[5, 10, 15, 20, 25, 30, 35].map((temp, i) => {
+                        const x = 60 + (i / 6) * 900;
+                        return (
+                          <g key={temp}>
+                            <line x1={x} y1="20" x2={x} y2="360" stroke="#1e293b" strokeDasharray="3,3" />
+                            <text x={x} y="380" fill="#64748b" fontSize="12" textAnchor="middle">{temp}°C</text>
+                          </g>
+                        );
+                      })}
+
+                      {/* Grid Lines - Y Axis (Depth) */}
+                      {[0, 100, 300, 500, 1000].map((depth) => {
+                        const y = 20 + (Math.sqrt(depth / 1000) * 340);
+                        return (
+                          <g key={depth}>
+                            <line x1="60" y1={y} x2="960" y2={y} stroke="#1e293b" strokeDasharray="3,3" />
+                            <text x="50" y={y + 4} fill="#64748b" fontSize="12" textAnchor="end">{depth}m</text>
+                          </g>
+                        );
+                      })}
+                      
+                      {/* Axis Lines */}
+                      <line x1="60" y1="20" x2="60" y2="360" stroke="#334155" strokeWidth="2" />
+                      <line x1="60" y1="360" x2="960" y2="360" stroke="#334155" strokeWidth="2" />
+
+                      {/* AI Confidence Band Polygon */}
+                      {(() => {
+                        const ptsTop = inferResults.depth_series.map((ds: any) => {
+                          const y = 20 + (Math.sqrt(ds.depth_m / 1000) * 340);
+                          const tHigh = ds.tribreed_degC + 2 * ds.confidence_std;
+                          const x = Math.min(960, Math.max(60, 60 + ((tHigh - 5) / 30) * 900));
+                          return `${x},${y}`;
+                        });
+                        const ptsBottom = [...inferResults.depth_series].reverse().map((ds: any) => {
+                          const y = 20 + (Math.sqrt(ds.depth_m / 1000) * 340);
+                          const tLow = ds.tribreed_degC - 2 * ds.confidence_std;
+                          const x = Math.min(960, Math.max(60, 60 + ((tLow - 5) / 30) * 900));
+                          return `${x},${y}`;
+                        });
+                        return (
+                          <polygon
+                            points={`${ptsTop.join(" ")} ${ptsBottom.join(" ")}`}
+                            fill="#06b6d4"
+                            fillOpacity="0.15"
+                          />
+                        );
+                      })()}
+
+                      {/* Climatological Baseline Polyline */}
+                      <polyline
+                        fill="none"
+                        stroke="#64748b"
+                        strokeWidth="2.5"
+                        strokeDasharray="5,5"
+                        points={inferResults.depth_series
+                          .map((ds: any) => {
+                            const y = 20 + (Math.sqrt(ds.depth_m / 1000) * 340);
+                            const x = Math.min(960, Math.max(60, 60 + ((ds.baseline_degC - 5) / 30) * 900));
+                            return `${x},${y}`;
+                          })
+                          .join(" ")}
+                      />
+
+                      {/* Tri-Breeded AI Prediction Polyline */}
+                      <polyline
+                        fill="none"
+                        stroke="#22d3ee"
+                        strokeWidth="3.5"
+                        points={inferResults.depth_series
+                          .map((ds: any) => {
+                            const y = 20 + (Math.sqrt(ds.depth_m / 1000) * 340);
+                            const x = Math.min(960, Math.max(60, 60 + ((ds.tribreed_degC - 5) / 30) * 900));
+                            return `${x},${y}`;
+                          })
+                          .join(" ")}
+                      />
+
+                      {/* Data Points */}
+                      {inferResults.depth_series.map((ds: any, idx: number) => {
+                        const y = 20 + (Math.sqrt(ds.depth_m / 1000) * 340);
+                        const x = Math.min(960, Math.max(60, 60 + ((ds.tribreed_degC - 5) / 30) * 900));
+                        return (
+                          <circle
+                            key={`pt-${idx}`}
+                            cx={x}
+                            cy={y}
+                            r="5"
+                            fill="#020617"
+                            stroke="#22d3ee"
+                            strokeWidth="2"
+                            className="cursor-pointer hover:stroke-white transition-colors"
+                          >
+                            <title>{`Depth: ${ds.depth_m}m
+Pred: ${ds.tribreed_degC}°C
+Avg: ${ds.baseline_degC}°C
+Diff: ${(ds.tribreed_degC - ds.baseline_degC).toFixed(2)}°C`}</title>
+                          </circle>
+                        );
+                      })}
+                    </svg>
+            </div>
+          </div>
+        </div>
+      )}
+</main>
       </div>
     </div>
   );
