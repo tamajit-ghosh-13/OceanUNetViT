@@ -33,7 +33,7 @@ from train import get_compute_device
 from evaluate_august_december import run_model_inference
 from evaluate import compute_all_metrics, plot_skill_profiles
 
-# Exact Simplex Quadratic Error-Covariance Optimal Weights across all 15 depths
+# Exact Simplex Quadratic Error-Covariance Optimal Weights across all 15 depths (Tri-Breed)
 TRI_WEIGHTS = {
     0:    [0.323, 0.144, 0.534],
     5:    [0.223, 0.066, 0.711],
@@ -50,6 +50,25 @@ TRI_WEIGHTS = {
     500:  [0.339, 0.330, 0.330],
     700:  [0.228, 0.643, 0.129],
     1000: [0.140, 0.644, 0.216],
+}
+
+# 4-Way Optimal Quad-Breed Weights (Baseline + v3 + v4 + v5)
+QUAD_BREED_WEIGHTS = {
+    0:    [0.249, 0.042, 0.611, 0.098],
+    5:    [0.172, 0.000, 0.321, 0.507],
+    10:   [0.057, 0.045, 0.500, 0.399],
+    20:   [0.106, 0.271, 0.000, 0.623],
+    30:   [0.236, 0.323, 0.000, 0.441],
+    50:   [0.277, 0.428, 0.000, 0.295],
+    75:   [0.318, 0.267, 0.000, 0.415],
+    100:  [0.410, 0.267, 0.150, 0.174],
+    125:  [0.439, 0.191, 0.209, 0.161],
+    150:  [0.448, 0.101, 0.130, 0.321],
+    200:  [0.426, 0.151, 0.112, 0.311],
+    300:  [0.125, 0.315, 0.000, 0.560],
+    500:  [0.099, 0.509, 0.197, 0.195],
+    700:  [0.112, 0.504, 0.274, 0.110],
+    1000: [0.089, 0.750, 0.034, 0.127],
 }
 
 
