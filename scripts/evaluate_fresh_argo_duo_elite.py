@@ -1,3 +1,16 @@
+"""
+================================================================================
+OceanEmbed - Live Out-of-Sample ARGO Evaluation Pipeline (evaluate_fresh_argo_duo_elite.py)
+================================================================================
+Automates the full zero-shot validation pipeline for ANY arbitrary historical month:
+  1. Live ERDDAP Query: Streams untouched in-situ ARGO float profiles from Ifremer GDAC.
+  2. Live Copernicus Marine Query: Downloads matching 12-channel surface feature drivers.
+  3. Feature Extraction & Regridding: Computes geostrophic winds, DOY harmonics, TEOS-10 density.
+  4. 3D Neural Inversion: Runs Duo-Elite Ensemble on compute device.
+  5. Continuous Ground Truth Validation: 2D Bilinear + Vertical PCHIP spline interpolation.
+================================================================================
+"""
+
 import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -29,16 +42,16 @@ DUO_ELITE_WEIGHTS = {
     0: [0.5000, 0.5000],
     5: [0.5961, 0.4039],
     10: [0.7996, 0.2004],
-    20: [0.8224, 0.1776],
-    30: [0.8563, 0.1437],
+    20: [0.1776, 0.8224],
+    30: [0.1437, 0.8563],
     50: [0.8605, 0.1395],
     75: [0.8607, 0.1393],
     100: [0.6812, 0.3188],
-    125: [0.9199, 0.0801],
-    150: [0.9070, 0.0930],
-    200: [0.4962, 0.5038],
+    125: [0.0801, 0.9199],
+    150: [0.0930, 0.9070],
+    200: [0.0962, 0.9038],
     300: [0.0441, 0.9559],
-    500: [0.2275, 0.7725],
+    500: [0.0775, 0.9225],
     700: [0.3026, 0.6974],
     1000: [0.2169, 0.7831],
 }

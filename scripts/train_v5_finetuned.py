@@ -1,18 +1,36 @@
 """
 ================================================================================
-OceanEmbed - Fine-Tune OceanUNetViT v5 with In-Situ ARGO Observation Loss
+OceanEmbed - Hybrid In-Situ ARGO Fine-Tuning Pipeline (train_v5_finetuned.py)
 ================================================================================
-Implements Hybrid Loss:
-   L_total = L_GLORYS (Dense Grid Reanalysis) + lambda_ARGO * L_InSitu (Sparse CTD Floats)
+Fine-tunes OceanUNetViT v5 by jointly training on dense reanalysis grids AND
+792,481 sparse, real-world physical ARGO float CTD measurements.
 
-Where L_InSitu evaluates continuous sub-grid 2D bilinear spatial interpolation +
-vertical PCHIP spline interpolation directly against real physical ARGO floats:
-   - argo_dec07.csv
-   - argo_sep12.csv
-   - argo_mar14.csv
-   - argo_aug17.csv
-   - argo_jul22.csv
-   - argo_dec22.csv
+MATHEMATICAL HYBRID LOSS FORMULATION:
+  L_total = L_grid_physics + lambda_ARGO * L_in_situ
+
+  1. Dense Physics Grid Loss (L_grid_physics):
+     Enforces layer-weighted reconstruction, vertical gradient matching, curvature,
+     and strict monotonicity across full (101 x 241) ocean grids.
+
+  2. Differentiable Continuous In-Situ Residual Loss (L_in_situ):
+     For a float at continuous coordinates (lat_f, lon_f, z_f):
+       a. Normalized float coordinates: gx in [0, W-1], gy in [0, H-1]
+       b. 4-Corner Grid Vertex Indices: (x0, y0), (x1, y0), (x0, y1), (x1, y1)
+       c. Continuous Bilinear Weights:
+            w_a = (x1 - gx) * (y1 - gy)
+            w_b = (x1 - gx) * (gy - y0)
+            w_c = (gx - x0) * (y1 - gy)
+            w_d = (gx - x0) * (gy - y0)
+       d. Differentiable Predicted Temperature Gather:
+            T_pred_float = w_a * I(x0,y0) + w_b * I(x0,y1) + w_c * I(x1,y0) + w_d * I(x1,y1)
+       e. Mean Squared Residual Error:
+            L_in_situ = (1 / N_batch) * sum_{i=1}^{1024} ( T_pred_float^i - T_argo_norm^i )^2
+
+TRAINING LINEAGE & PARAMETERS:
+  • Warm-Start Base: checkpoints/best_ocean_model_v5.pt
+  • Unified In-Situ Dataset: 792,481 physical CTD observations across 6 eras
+  • Optimizer: AdamW (lr = 1.5e-5, weight_decay = 1e-5) with Cosine Annealing
+  • Output Checkpoint: checkpoints/best_ocean_model_v5_finetuned.pt
 ================================================================================
 """
 

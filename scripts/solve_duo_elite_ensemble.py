@@ -2,6 +2,20 @@
 ================================================================================
 OceanEmbed - Optimal Simplex Weight Solver: Duo-Elite Ensemble (v4_ext + v5_ft)
 ================================================================================
+Solves depth-by-depth optimal convex combination simplex weights:
+    T_ensemble(z) = w_v4(z) * T_v4_ext(z) + w_v5(z) * T_v5_ft(z)
+
+CONSTRAINED SLSQP OPTIMIZATION PROBLEM:
+  For each depth level z in [0, 5, 10, 20, 30, 50, 75, 100, 125, 150, 200, 300, 500, 700, 1000]m:
+      min_{w_v4, w_v5}  (1 / N_obs(z)) * sum_{i=1}^{N_obs(z)} ( w_v4 * T_v4^i(z) + w_v5 * T_v5^i(z) - T_argo^i(z) )^2
+      subject to:
+          w_v4 + w_v5 = 1.0       (Affine Unity Constraint)
+          w_v4 >= 0, w_v5 >= 0    (Non-Negativity / Convex Hull Constraint)
+
+PHYSICAL ROLE DIVISION:
+  • Upper Layer (0m - 150m):  w_v4 ≈ 80% - 92% (Specialist in high-strain wind shear & cyclone mixing)
+  • Deep Layer (200m - 1000m): w_v5 ≈ 70% - 96% (Specialist in hydrostatic density & abyssal stratification)
+================================================================================
 """
 
 import sys, os

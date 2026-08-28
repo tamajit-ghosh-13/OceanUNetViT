@@ -1,18 +1,21 @@
 """
 ================================================================================
-OceanEmbed - Training Script (train.py)  [UPGRADED v2]
+OceanEmbed - Baseline 7-Channel Training Pipeline (train.py)
 ================================================================================
-CHANGES FROM v1:
-  - Aligned to 7-channel inputs and 15 standard output depths
-  - Targets are denormalized to °C for interpretable metrics
-  - Added per-depth RMSE display during training (so you can track thermocline)
-  - Checkpoint saves include normalization stats for deployment
-  - Guard block shows full model/data spec confirmation before pausing
+Trains the baseline 7-channel OceanUNetViT model on satellite-derived surface inputs
+and 15 standard subsurface depth targets.
 
-MPS (Metal Performance Shaders) Apple Silicon Optimization Notes:
-  - num_workers=0 in DataLoader (MPS does not support multiprocessing workers)
-  - non_blocking=True moves tensors to MPS asynchronously for speed
-  - torch.mps.synchronize() ensures GPU computation is flushed when timing
+MATHEMATICAL OPTIMIZATION OBJECTIVE:
+  The baseline model minimizes standard Mean Squared Error (MSE) over ocean water cells:
+      L_MSE = (1 / |Omega|) * sum_{(x,y) in Omega} sum_{z=1}^{15} ( T_pred(x, y, z) - T_target(x, y, z) )^2
+  Where Omega is the valid ocean mask (excluding land).
+
+OPTIMIZATION HYPERPARAMETERS:
+  • Optimizer: AdamW with weight_decay = 1e-4 (decoupled weight decay regularization)
+  • Learning Rate Schedule: Cosine Annealing with T_max = epochs, eta_min = 1e-6
+  • Gradient Clipping: Max norm = 1.0 (prevents gradient explosion across ViT attention layers)
+  • Evaluation Metric: Root Mean Squared Error (RMSE) in physical degrees Celsius (°C):
+      RMSE(z) = sqrt( (1 / |Omega|) * sum_{(x,y) in Omega} ( T_pred_C(x, y, z) - T_target_C(x, y, z) )^2 )
 ================================================================================
 """
 

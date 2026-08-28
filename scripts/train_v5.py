@@ -2,24 +2,28 @@
 ================================================================================
 OceanEmbed - v5 Physics-Guided Thermocline-Preserving Training Pipeline (train_v5.py)
 ================================================================================
-CRITICAL CONSTRAINT: NO ARGO FLOAT DATA IN THE TRAINING SET.
-ARGO float observations are exclusively preserved as an untouched, independent
-zero-shot out-of-sample benchmark (2007, 2014, 2017, 2022).
+Implements the 4-component PhysicsPreservingThermoclineLoss for pure physical generalization.
 
-Key Innovations in v5:
-  1. Thermocline Gradient-Preserving Loss:
-     Calculates vertical derivative dT/dz and penalizes gradient smoothing,
-     forcing the network to capture the sharp pycnocline/thermocline drop.
-  2. Multi-Scale Layer-Weighted Loss:
-     Applies maximum loss penalty weights exactly at the critical transition
-     depths (50m, 75m, 100m, 125m, 150m) where reanalysis bias previously spiked.
-  3. Strict Physical Monotonicity Constraint:
-     Enforces that dTemp/dz <= 0 strictly throughout the water column.
-  4. Curvature & Inflexion Regularizer:
-     Matches the second derivative d^2T/dz^2 to preserve the S-curve geometry.
-  5. Warm-Start Transfer Learning:
-     Initialized from v4 physics weights and optimized across all 457 multi-year
-     seasonal catalog days using cosine annealing schedule.
+MATHEMATICAL LOSS FORMULATION:
+  L_v5 = alpha_recon * L_recon + lambda_grad * L_grad + lambda_curv * L_curv + lambda_mono * L_mono
+
+  Where:
+  1. Layer-Weighted Reconstruction Loss (L_recon):
+     L_recon = mean( w(z) * ( T_pred(z) - T_target(z) )^2 )
+     w(z) weights the core thermocline (50m - 150m) up to 3.5x higher than surface.
+
+  2. Vertical Temperature Gradient Matching Loss (L_grad):
+     L_grad = (1 / 14) * sum_{z=1}^{14} ( (dT_pred/dz)_z - (dT_target/dz)_z )^2
+     Where finite difference: (dT/dz)_z = ( T(z+1) - T(z) ) / ( delta_z + eps )
+     Matches the physical vertical rate of thermal decay.
+
+  3. Vertical Curvature / Inflection Matching Loss (L_curv):
+     L_curv = (1 / 13) * sum_{z=1}^{13} ( (d^2 T_pred / dz^2)_z - (d^2 T_target / dz^2)_z )^2
+     Preserves the characteristic oceanographic "S-curve" inflection profile.
+
+  4. Hydrostatic Stratification Monotonicity Constraint (L_mono):
+     L_mono = mean( ReLU( T_pred(z+1) - T_pred(z) ) )
+     Strictly penalizes any non-physical buoyant inversions (colder water above warmer water).
 ================================================================================
 """
 

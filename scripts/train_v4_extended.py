@@ -1,20 +1,45 @@
-"""""
+"""
 ================================================================================
 OceanEmbed - 12-Month Extreme Climatic Anomaly Training Pipeline (train_v4_extended.py)
 ================================================================================
-Trains on top of best_ocean_model_v4.pt using 12 distinct historical anomaly months:
-  1.  Nov 2016 - Record Negative IOD (-IOD)
-  2.  Jun 2020 - Super Cyclone Amphan & SW Monsoon onset
-  3.  Oct 2019 - Record Super Positive IOD (+IOD)
-  4.  May 2021 - Pre-Monsoon Extreme Cyclones Tauktae & Yaas
-  5.  Dec 2015 - Super El Niño Peak / Basin-Wide Warming
-  6.  May 2010 - Pre-Monsoon Super Heatwave & Warm Pool Expansion
-  7.  Aug 2018 - Kerala Extreme Monsoon & Strong Somali Jet Upwelling
-  8.  May 2019 - Extremely Severe Cyclonic Storm Fani
-  9.  Nov 2017 - Severe Cyclone Ockhi Rapid Intensification
-  10. Aug 2008 - Strong Positive IOD Summer Upwelling
-  11. Jul 2013 - Intense Southwest Monsoon Deep Active Phase
-  12. Jan 2012 - Strong La Niña Winter Northeast Monsoon Convection
+This script warm-starts from best_ocean_model_v4.pt and trains on a curated 12-month
+Grand Extreme Anomaly Catalog extracted from Copernicus GLORYS12 reanalysis.
+
+WHY ANOMALY TRAINING IS NECESSARY:
+  Standard baseline training on calm seasonal data fails during extreme events because
+  intense cyclonic shear, extreme upwelling, and basin-wide heating produce non-linear
+  isotherm displacements that linear models blur. Training across 12 historic extreme
+  anomaly months forces the neural network to learn high-strain turbulence physics.
+
+12 TARGET CLIMATIC ANOMALY MONTHS:
+  1.  Nov 2016 : Historic Record Negative Indian Ocean Dipole (-IOD)
+  2.  Jun 2020 : Super Cyclone Amphan Category 5 mixing & SW Monsoon onset
+  3.  Oct 2019 : Historic Super Positive IOD (+IOD) & Somali shoaling
+  4.  May 2021 : Pre-Monsoon Extreme Cyclones Tauktae (Arabian Sea) & Yaas (Bay of Bengal)
+  5.  Dec 2015 : Super El Niño Peak & Indian Ocean Basin-Wide Warming
+  6.  May 2010 : Pre-Monsoon Super Heatwave & Warm Pool thermal expansion
+  7.  Aug 2018 : Kerala Super Flood Monsoon & Intense Somali Jet Upwelling
+  8.  May 2019 : Extremely Severe Cyclonic Storm Fani (Bay of Bengal)
+  9.  Nov 2017 : Very Severe Cyclone Ockhi rapid intensification
+  10. Aug 2008 : Strong Positive IOD summer upwelling
+  11. Jul 2013 : Intense Southwest Monsoon deep active break cycle
+  12. Jan 2012 : Strong La Niña winter Northeast Monsoon convection
+
+PHYSICS STRATIFICATION LOSS FORMULATION:
+  L_total = L_recon + lambda_grad * L_grad + lambda_mono * L_mono
+
+  1. Layer-Weighted MSE Loss (L_recon):
+     L_recon = mean( w(z) * ( T_pred(z) - T_target(z) )^2 )
+     Where w(z) = [1.0, 1.0, 1.0, 1.2, 1.5, 2.5, 3.0, 3.5, 3.0, 2.5, 1.8, 1.2, 1.0, 1.0, 1.0]
+     heavily weights the 50m - 150m thermocline transition zone.
+
+  2. Vertical Temperature Gradient Loss (L_grad):
+     L_grad = MSE( dT_pred/dz, dT_target/dz )
+     Matches the vertical derivative to preserve the steepness of the thermocline.
+
+  3. Stratification Monotonicity Loss (L_mono):
+     L_mono = mean( ReLU( T_pred(z+1) - T_pred(z) ) )
+     Strictly penalizes hydrostatic inversions where colder water is predicted above warmer water.
 ================================================================================
 """
 

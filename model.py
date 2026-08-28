@@ -1,37 +1,34 @@
 """
 ================================================================================
-OceanEmbed - Model Architecture (model.py)  [UPGRADED v2]
+OceanEmbed - Hybrid CNN-ViT Architecture (model.py)
 ================================================================================
-CHANGES FROM v1:
-  - in_channels: 3 → 7 (SST, SSS, SSH, U_CUR, V_CUR, U_WIND, V_WIND)
-  - out_depth_levels: 14 → 15 (standard hackathon depth levels)
-  - base_filters: 32 → 64 (more capacity for 7 input channels)
-  - ViT heads: 4 → 8 (richer attention for larger bottleneck)
-  - Added: get_embedding() method for latent space extraction
-  - Added: 4-level encoder/decoder (deeper U-Net for 101×241 spatial input)
+Implements the hybrid Convolutional Vision Transformer (OceanUNetViT) for
+continuous 3D ocean subsurface thermal inversion: T(x, y, z, t) from 2D satellite surface observations.
 
-ARCHITECTURE SUMMARY:
-  [Input: (B, 7, 101, 241)]
-       ↓
-  ┌────────────────────────────┐
-  │  ENCODER (4 levels, CNN)   │  Progressively compresses spatial resolution
-  │  Level 1: (B, 64, 101, 241)│  Full resolution — fine coastal details
-  │  Level 2: (B, 128, 50, 120)│  Half resolution — mesoscale eddies
-  │  Level 3: (B, 256, 25, 60) │  Quarter — regional circulation patterns
-  │  Level 4: (B, 512, 12, 30) │  Eighth — basin-scale dynamics
-  └─────────────┬──────────────┘
-               ↓
-  ┌────────────────────────────┐
-  │  BOTTLENECK (ViT, 8 heads) │  Global North Indian Ocean teleconnections
-  │  Compact Embedding Vector  │  (B, 256) — extracted by get_embedding()
-  └─────────────┬──────────────┘
-               ↓
-  ┌────────────────────────────┐
-  │  DECODER (4 levels)        │  Upsamples + skip connections
-  │  Projects to 15 depth layers│
-  └────────────────────────────┘
-       ↓
-  [Output: (B, 15, 101, 241)]
+TENSOR SHAPE EVOLUTION THROUGH THE NETWORK:
+  1. Input Surface Tensor:  (B, 12, H=101, W=241)
+  2. Encoder Level 1 (CNN): (B, 64,  H=101, W=241)  [Full resolution — fine coastal details]
+     └── MaxPool2d(2x2) ──▶ (B, 64,  H=50,  W=120)
+  3. Encoder Level 2 (CNN): (B, 128, H=50,  W=120)  [Half resolution — mesoscale eddies]
+     └── MaxPool2d(2x2) ──▶ (B, 128, H=25,  W=60)
+  4. Encoder Level 3 (CNN): (B, 256, H=25,  W=60)   [Quarter resolution — regional circulation]
+     └── MaxPool2d(2x2) ──▶ (B, 256, H=12,  W=30)
+  5. Encoder Level 4 (CNN): (B, 512, H=12,  W=30)   [Eighth resolution — basin-scale dynamics]
+  6. Vision Transformer Bottleneck (ViT):
+     • Flattens spatial map into 360 tokens: (B, 360, d_embed=256)
+     • Runs 8 Multi-Head Self-Attention layers:
+         Attention(Q, K, V) = softmax( (Q * K^T) / sqrt(d_k) ) * V
+     • Captures global teleconnections across the North Indian Ocean basin.
+     • Unflattens back to feature maps: (B, 512, 12, 30)
+  7. Decoder Level 4 (CNN): TransposeConv + Skip(Enc4) ──▶ (B, 256, 25, 60)
+  8. Decoder Level 3 (CNN): TransposeConv + Skip(Enc3) ──▶ (B, 128, 50, 120)
+  9. Decoder Level 2 (CNN): TransposeConv + Skip(Enc2) ──▶ (B, 64,  101, 241)
+  10. Decoder Level 1 (CNN): DoubleConv refinement     ──▶ (B, 64,  101, 241)
+  11. Output Projection Head + Depth Bias Vector:
+      • 1x1 Conv2D maps 64 channels ──▶ 15 Depth Channels
+      • Adds learnable depth bias vector b_z in R^15:
+          T_pred(x, y, z) = Conv_1x1(Feature_Map) + b_z
+      • Output Shape: (B, 15, H=101, W=241)
 ================================================================================
 """
 

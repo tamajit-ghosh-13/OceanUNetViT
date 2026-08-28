@@ -1,15 +1,26 @@
 """
 ================================================================================
-OceanEmbed - Data Pipeline (data_loader.py)  [UPGRADED v2]
+OceanEmbed - Data Pipeline & Preprocessing Dataset (data_loader.py)
 ================================================================================
-CHANGES FROM v1:
-  - Input channels: 3 → 7 (added U_CUR, V_CUR, U_WIND, V_WIND)
-  - Depth levels: 14 custom → 15 standard hackathon levels
-  - Grid size: 64×128 arbitrary → 101×241 (0.25° North Indian Ocean)
-  - Added: full preprocessing pipeline integration (normalize, mask, fill)
-  - Added: GLORYS real data loading stub for all 7 channels + target
+Manages dataset loading, spatial-median land-mask imputation, per-channel normalization,
+and PyTorch DataLoader batching for Apple Silicon MPS.
 
-TARGET: North Indian Ocean, 5°N–30°N, 45°E–105°E, 0.25° × 0.25°, daily
+PREPROCESSING PIPELINE FOR EACH DAILY OCEAN SLICE:
+  1. Land Mask Extraction:
+     • Identifies valid ocean water cells where SST is non-NaN.
+     • Valid Ocean Mask: M(x, y) = True if SST(x, y) is finite, else False.
+  2. Spatial Median Imputation:
+     • Land pixels (NaNs) are filled with the median value of surrounding water pixels:
+         x_fill(x, y) = median( { x(x', y') | M(x', y') = True } )
+     • Guarantees numerical stability and prevents NaN propagation through convolutions.
+  3. Per-Channel Physical Normalization:
+     • Each channel c is normalized into zero-mean, unit-variance standardized space:
+         x_norm(c, x, y) = ( x(c, x, y) - mu_c ) / sigma_c
+     • Land pixels are explicitly zeroed after normalization:
+         x_norm(c, x, y) = 0  for all (x, y) where M(x, y) = False
+  4. Per-Depth Target Standardization:
+     • Target temperatures are standardized per depth level z in [0..14]:
+         T_norm(z, x, y) = ( T(z, x, y) - mu_z ) / sigma_z
 ================================================================================
 """
 

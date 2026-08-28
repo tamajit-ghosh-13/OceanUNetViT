@@ -1,12 +1,35 @@
 """
 ================================================================================
-OceanEmbed - Central Configuration (config.py)
+OceanEmbed - Central Configuration & Physical Constants (config.py)
 ================================================================================
-This file is the single source of truth for every constant in the project.
-If you need to change a depth level, the bounding box, or a dataset ID,
-change it HERE and it will automatically propagate everywhere.
+This module serves as the single source of truth for the entire OceanEmbed pipeline.
 
-Beginner Tip: Think of this file like the "settings menu" for the entire AI.
+PHYSICAL DOMAIN SPECIFICATION:
+  • Region: North Indian Ocean (Arabian Sea, Bay of Bengal, Equatorial Indian Ocean)
+  • Latitude (phi):   5.0°N to 30.0°N  (101 points at delta_phi = 0.25°)
+  • Longitude (lambda): 45.0°E to 105.0°E (241 points at delta_lambda = 0.25°)
+  • Spatial Dimensions: H = 101, W = 241, Total Surface Grid Nodes = 24,341
+
+INPUT FEATURE CHANNELS (12 Surface Variables):
+  1.  SST            : Sea Surface Temperature (°C) — Surface thermal boundary condition
+  2.  SSS            : Sea Surface Salinity (PSU) — Surface haline boundary condition
+  3.  SSH            : Sea Surface Height (m) — Altimetric baroclinic thermocline pumping
+  4.  U_CUR          : Zonal Surface Ocean Current (m/s) — East-West advective transport
+  5.  V_CUR          : Meridional Surface Ocean Current (m/s) — North-South advective transport
+  6.  U_WIND         : Geostrophic Zonal Wind (m/s) — u_w = -(g/f) * (d_SSH/dy)
+  7.  V_WIND         : Geostrophic Meridional Wind (m/s) — v_w = (g/f) * (d_SSH/dx)
+  8.  WIND_MAG       : Mechanical Wind Magnitude (m/s) — |w| = sqrt(u_w^2 + v_w^2)
+  9.  DOY_SIN        : Solar Insolation Phase — sin(2 * pi * DayOfYear / 365.25)
+  10. DOY_COS        : Monsoon Seasonal Cycle — cos(2 * pi * DayOfYear / 365.25)
+  11. SST_ANOM       : Climatological SST Anomaly (°C) — SST(x,y,t) - mean_SST(x,y)
+  12. DENSITY_SIGMA0 : Potential Density Anomaly (kg/m^3) — TEOS-10: sigma_0 = rho(S_A, Theta, 0) - 1000
+
+OUTPUT VERTICAL TARGETS (15 Standard Depth Levels):
+  z in [0, 5, 10, 20, 30, 50, 75, 100, 125, 150, 200, 300, 500, 700, 1000] meters.
+  • Mixed Layer: 0m - 30m (wind-driven turbulent homogenization)
+  • Thermocline Core: 50m - 150m (steepest vertical temperature gradient dT/dz)
+  • Sub-Thermocline: 200m - 300m (intermediate water mass transition)
+  • Deep Ocean: 500m - 1000m (Antarctic Intermediate & deep water mass stratification)
 ================================================================================
 """
 
@@ -142,6 +165,8 @@ NORMALIZATION_STATS = {
     "DENSITY_SIGMA0": {"mean": 22.5,  "std": 1.5},    # kg/m^3 (TEOS-10 surface potential density)
     "TEMP_TARGET":    {"mean": 16.0,  "std": 10.0},
 }
+
+
 
 # Per-Depth Target Normalization Stats (Feature 3)
 # Based on physical North Indian Ocean thermocline depth distributions

@@ -1,3 +1,24 @@
+"""
+================================================================================
+OceanEmbed - Multi-Era Duo-Elite Ensemble Evaluation (evaluate_duo_elite_ensemble.py)
+================================================================================
+Evaluates the Duo-Elite Ensemble (v4_extended + v5_finetuned) directly against
+hundreds of thousands of real physical ARGO CTD float measurements across historic anomaly eras.
+
+CONTINUOUS IN-SITU EVALUATION PIPELINE:
+  1. Forward Inference: Generates daily 3D grid volumes (15, 101, 241) on device.
+  2. Optimal Convex Simplex Combination:
+       T_duo(z) = w_v4(z) * T_v4(z) + w_v5(z) * T_v5(z)
+  3. Spatial Regular Grid Interpolation:
+       Continuous 2D bilinear interpolation across latitude-longitude mesh.
+  4. Vertical Piecewise Cubic Hermite Interpolating Polynomial (PCHIP):
+       Samples continuous pressure z_pres of the float profile without overshoot:
+           T_pred = Pchip(z_standard, T_interp(lat_f, lon_f))(z_pres)
+  5. Statistical Validation:
+       Computes depth-by-depth RMSE (°C) and Pearson correlation (r) against raw CTDs.
+================================================================================
+"""
+
 import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
