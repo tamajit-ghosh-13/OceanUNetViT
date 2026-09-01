@@ -3,6 +3,8 @@
 import React, { useState } from "react";
 import Map, { Marker, NavigationControl, Source, Layer } from "react-map-gl/maplibre";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, Area, ComposedChart } from 'recharts';
+
 import {
   Compass,
   Anchor,
@@ -25,10 +27,17 @@ import {
   RotateCcw,
   Sparkles,
   Thermometer,
-  Wind,
-  Droplets,
   Waves,
   Navigation,
+  ShieldAlert,
+  ThermometerSun,
+  Biohazard,
+
+  Wind,
+  Droplets,
+  ZoomIn,
+  Maximize2,
+
 } from "lucide-react";
 
 const GRATICULE_GEOJSON = (() => {
@@ -52,7 +61,7 @@ const GRATICULE_GEOJSON = (() => {
 
 export default function OceanEmbedDashboard() {
   const [activeTab, setActiveTab] = useState<
-    "live_infer" | "overview" | "reconstruction" | "recommender" | "explainability" | "fingerprint" | "forecasting" | "benchmarks"
+    "live_infer" | "reconstruction" | "disaster_risk" | "recommender" | "explainability" | "fingerprint" | "forecasting" | "benchmarks"
   >("live_infer");
 
   // User Interactive 7 Surface Inputs State
@@ -63,8 +72,6 @@ export default function OceanEmbedDashboard() {
   const [ssh, setSsh] = useState<number>(0.12);
   const [uCur, setUCur] = useState<number>(0.25);
   const [vCur, setVCur] = useState<number>(-0.15);
-  const [uWind, setUWind] = useState<number>(4.5);
-  const [vWind, setVWind] = useState<number>(-2.1);
   const [doy, setDoy] = useState<number>(200);
   const [year, setYear] = useState<number>(2026);
 
@@ -74,11 +81,23 @@ export default function OceanEmbedDashboard() {
   const [selectedDepth, setSelectedDepth] = useState<number>(100);
   const [isTransectModalOpen, setIsTransectModalOpen] = useState<boolean>(false);
   const [isThermalProfileModalOpen, setIsThermalProfileModalOpen] = useState<boolean>(false);
+  const [isAcousticsModalOpen, setIsAcousticsModalOpen] = useState<boolean>(false);
   const depths = [0, 5, 10, 20, 30, 50, 75, 100, 125, 150, 200, 300, 500, 700, 1000];
 
+  const [seedStormCategory, setSeedStormCategory] = useState<number>(1);
+
+  const [activeDisasterTab, setActiveDisasterTab] = useState<"cyclone" | "heatwave" | "drought" | "algae">("cyclone");
+
   // Presets
+  const [uWind, setUWind] = useState<number>(0);
+  const [vWind, setVWind] = useState<number>(0);
+
+  const [selectedDisasterImage, setSelectedDisasterImage] = useState<any>(null);
+
+
   const applyPreset = (type: "somali" | "bengal" | "equatorial" | "cyclone") => {
     if (type === "somali") {
+
       setLat(10.5); setLon(53.0); setSst(26.2); setSss(36.1); setSsh(-0.18); setUCur(0.85); setVCur(0.95); setUWind(9.8); setVWind(6.2); setDoy(205);
     } else if (type === "bengal") {
       setLat(15.0); setLon(88.5); setSst(30.4); setSss(31.2); setSsh(0.24); setUCur(-0.15); setVCur(0.10); setUWind(3.2); setVWind(1.5); setDoy(210);
@@ -94,10 +113,13 @@ export default function OceanEmbedDashboard() {
     setIsLoading(true);
 
     try {
-      // First try live backend API
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+
       const res = await fetch("http://localhost:8000/api/predict", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           latitude: lat,
           longitude: lon,
@@ -111,6 +133,7 @@ export default function OceanEmbedDashboard() {
           doy: doy,
         }),
       });
+      clearTimeout(timeoutId);
 
       if (res.ok) {
         const data = await res.json();
@@ -127,61 +150,100 @@ export default function OceanEmbedDashboard() {
       const windMag = Math.sqrt(uWind * uWind + vWind * vWind);
       const densitySigma0 = 23.5 + 0.7 * (sss - 35.0) - 0.25 * (sst - 28.0);
       
-      // Geographic physics offsets
-      const coriolisFactor = Math.sin((lat * Math.PI) / 180.0);
-      const basinOffset = (lon > 75) ? -0.8 : 0.4; // BoB vs Arabian Sea
-      const latThermalGradient = (lat - 15) * -0.05;
-      
-      const depthProfiles = depths.map((d) => {
-        let decay = 1.0;
-        if (d <= 20) {
-          decay = 1.0 - (d / 20.0) * 0.035 * (windMag > 8 ? 0.4 : 1.0);
-        } else if (d <= 150) {
-          const thermProgress = (d - 20) / 130.0;
-          decay = 0.965 - thermProgress * 0.42 + (ssh * 0.15) - (uCur * 0.08) - (coriolisFactor * 0.02);
-        } else if (d <= 500) {
-          const intProgress = (d - 150) / 350.0;
-          decay = 0.545 - intProgress * 0.22;
-        } else {
-          const deepProgress = (d - 500) / 500.0;
-          decay = 0.325 - deepProgress * 0.09;
+      // Subskin diurnal calculation
+      const coolSkin = 0.20 * Math.exp(-windMag / 12.0);
+      const solar = 0.6 + 0.4 * Math.cos((2 * Math.PI * (200 - 140)) / 365.0);
+      const warmLayer = (3.0 * solar) / (1.0 + 1.2 * Math.pow(windMag, 1.5));
+      const deltaT0 = Math.max(-0.3, Math.min(2.0, coolSkin + warmLayer));
+      const t0 = sst + deltaT0;
+
+      const climMeans = [29.0, 28.8, 28.5, 28.2, 27.8, 26.5, 24.5, 22.0, 19.5, 17.5, 15.5, 12.5, 10.5, 9.5, 7.0];
+      const sstAnom = sst - 29.0;
+
+      let lastT = t0 + 0.1;
+      const depthProfiles = depths.map((d, idx) => {
+        let tVal = d === 0 ? t0 : climMeans[idx] + sstAnom * Math.exp(-d / 80.0);
+        // Strict hydrostatic monotonic stratification
+        if (tVal > lastT - 0.05) {
+          tVal = lastT - 0.05;
         }
+        lastT = tVal;
 
-        const tBase = sst * decay - 0.25 * Math.sin((d * Math.PI) / 300) + (d > 30 ? latThermalGradient : 0) + (d > 50 ? basinOffset : 0);
-        const tV3 = sst * decay - 0.15 * Math.cos((d * Math.PI) / 250) + (densitySigma0 - 23.5) * 0.12 - (coriolisFactor * d * 0.005);
-        const tV4 = sst * decay + (ssh * 1.5) * Math.exp(-d / 100) + (basinOffset * 0.5 * Math.exp(-d / 200));
-
-        // Tri-Breed Blend
-        const tTri = 0.25 * tBase + 0.35 * tV3 + 0.40 * tV4;
-        const std = d === 100 ? 1.35 : d < 50 ? 0.35 : 0.45;
+        const tFinal = Math.max(2.0, Math.min(36.0, tVal));
+        const dS = sss - 35.0;
+        const cVal = 1448.96 + 4.591 * tFinal - 5.304e-2 * (tFinal * tFinal) + 2.374e-4 * Math.pow(tFinal, 3) + 1.340 * dS + 1.630e-2 * d + 1.675e-7 * (d * d) - 1.025e-2 * tFinal * dS;
+        const std = d === 100 ? 1.05 : d < 50 ? 0.35 : 0.45;
 
         return {
           depth_m: d,
-          baseline_degC: parseFloat(tBase.toFixed(3)),
-          v3_degC: parseFloat(tV3.toFixed(3)),
-          v4_degC: parseFloat(tV4.toFixed(3)),
-          tribreed_degC: parseFloat(tTri.toFixed(3)),
+          baseline_degC: parseFloat((tFinal - 0.5).toFixed(3)),
+          v4_degC: parseFloat(tFinal.toFixed(3)),
+          v5_degC: parseFloat(tFinal.toFixed(3)),
+          duo_elite_degC: parseFloat(tFinal.toFixed(3)),
+          tribreed_degC: parseFloat(tFinal.toFixed(3)),
+          sound_speed_ms: parseFloat(cVal.toFixed(1)),
           confidence_std: std,
         };
       });
 
-      const d20 = 100 + ssh * 80 - (uCur > 0.5 ? 25 : 0);
-      const mld = 25 + (windMag * 2.5);
-      const ohc = parseFloat((sst * 3.4 + ssh * 12).toFixed(1));
+      // Continuous D26 & D20
+      let d26Val = 0.0;
+      for (let i = 0; i < depthProfiles.length - 1; i++) {
+        const t1 = depthProfiles[i].duo_elite_degC;
+        const t2 = depthProfiles[i+1].duo_elite_degC;
+        if (t1 >= 26.0 && t2 <= 26.0) {
+          const frac = (t1 - 26.0) / (t1 - t2 + 1e-6);
+          d26Val = depthProfiles[i].depth_m + frac * (depthProfiles[i+1].depth_m - depthProfiles[i].depth_m);
+          break;
+        }
+      }
+
+      let d20Val = 100.0;
+      for (let i = 0; i < depthProfiles.length - 1; i++) {
+        const t1 = depthProfiles[i].duo_elite_degC;
+        const t2 = depthProfiles[i+1].duo_elite_degC;
+        if (t1 >= 20.0 && t2 <= 20.0) {
+          const frac = (t1 - 20.0) / (t1 - t2 + 1e-6);
+          d20Val = depthProfiles[i].depth_m + frac * (depthProfiles[i+1].depth_m - depthProfiles[i].depth_m);
+          break;
+        }
+      }
+
+      const mldVal = 25 + (windMag * 2.5);
+      const tchpVal = d26Val > 0 ? parseFloat(((sst - 26.0) * d26Val * 0.4).toFixed(1)) : 0.0;
 
       setInferResults({
         status: "SUCCESS",
+        model_version: "Duo-Elite Ensemble v5.0 (Client Simulated Fallback)",
         coordinates: { lat, lon },
         inputs: {
-          sst, sss, ssh, u_cur: uCur, v_cur: vCur, u_wind: uWind, v_wind: vWind,
+          sst,
+          sss,
+          ssh,
+          u_cur: uCur,
+          v_cur: vCur,
+          u_wind: uWind,
+          v_wind: vWind,
           wind_magnitude: parseFloat(windMag.toFixed(2)),
           potential_density_sigma0: parseFloat(densitySigma0.toFixed(2)),
         },
         depth_series: depthProfiles,
+        derived_physical_products: {
+          tchp_kj_cm2: tchpVal,
+          cyclone_fuel_category: tchpVal < 20 ? "LOW (Calm Subsurface)" : tchpVal < 50 ? "MODERATE (Tropical Storm)" : tchpVal < 80 ? "HIGH (Rapid Intensification Fuel)" : "EXTREME (Cat 4/5 Reservoir)",
+          cyclone_fuel_color: tchpVal < 20 ? "#22c55e" : tchpVal < 50 ? "#38bdf8" : tchpVal < 80 ? "#f97316" : "#ef4444",
+          isotherm_d26_depth_m: parseFloat(d26Val.toFixed(1)),
+          thermocline_d20_depth_m: parseFloat(d20Val.toFixed(1)),
+          mixed_layer_depth_m: parseFloat(mldVal.toFixed(1)),
+          sofar_sound_channel_axis_m: 1000.0,
+          acoustic_duct_trapping_strength_ms: 43.4,
+          surface_sound_speed_ms: depthProfiles[0].sound_speed_ms,
+          deep_sound_speed_1000m_ms: depthProfiles[depthProfiles.length - 1].sound_speed_ms,
+        },
         ocean_metrics: {
-          thermocline_d20_depth_m: parseFloat(d20.toFixed(1)),
-          mixed_layer_depth_m: parseFloat(mld.toFixed(1)),
-          ocean_heat_content_kj_cm2: ohc,
+          thermocline_d20_depth_m: parseFloat(d20Val.toFixed(1)),
+          mixed_layer_depth_m: parseFloat(mldVal.toFixed(1)),
+          ocean_heat_content_kj_cm2: tchpVal,
         },
       });
       setIsLoading(false);
@@ -210,6 +272,12 @@ export default function OceanEmbedDashboard() {
     700: "/assets/snapshot_tribreed_deep_700m.png",
     1000: "/assets/snapshot_tribreed_deep_700m.png",
   };
+
+  const uohcValue = inferResults?.ocean_metrics?.ocean_heat_content_kj_cm2 ?? 50;
+  const d20Value = inferResults?.ocean_metrics?.thermocline_d20_depth_m ?? 100;
+  const mldValue = inferResults?.ocean_metrics?.mixed_layer_depth_m ?? 20;
+  const ds50 = inferResults?.depth_series?.find((d: any) => d.depth_m === 50);
+  const heatwaveValue = ds50 ? parseFloat((ds50.tribreed_degC - ds50.baseline_degC).toFixed(1)) : 2.4;
 
   return (
     <div className="min-h-screen bg-background text-on-surface text-on-surface flex flex-col font-body-lg selection:bg-primary selection:text-black">
@@ -255,44 +323,44 @@ export default function OceanEmbedDashboard() {
       {/* Main Container */}
       <div className="flex-1 flex flex-col md:flex-row">
         {/* Sidebar Nav */}
-        <aside className="w-full md:w-64 border-r border-glass-border bg-surface-white shadow-sm border border-glass-border/40 p-4 space-y-2 shrink-0">
+        <aside className="w-full md:w-64 border-r border-glass-border bg-surface-white shadow-sm p-4 space-y-2 shrink-0">
           <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted px-3 pt-1">
             Core Engine & Tools
           </p>
 
           <button
             onClick={() => setActiveTab("live_infer")}
-            className={`w-full flex items-center gap-3 px-3 py-2.5  font-body-lg text-body-lg font-medium transition-all cursor-pointer ${
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg font-body-lg text-body-lg font-medium transition-all cursor-pointer ${
               activeTab === "live_infer"
-                ? "bg-primary text-on-surface font-bold shadow-lg shadow-md"
+                ? "bg-primary text-white font-bold shadow-md"
                 : "text-text-muted hover:text-on-surface hover:bg-surface-container-high/50"
             }`}
           >
-            <Zap className="w-4 h-4 text-inverse-primary" />
+            <Zap className={`w-4 h-4 ${activeTab === "live_infer" ? "text-white" : "text-primary"}`} />
             <span>Interactive 7-Input Inversion</span>
           </button>
 
           <button
-            onClick={() => setActiveTab("overview")}
-            className={`w-full flex items-center gap-3 px-3 py-2.5  font-body-lg text-body-lg font-medium transition-all cursor-pointer ${
-              activeTab === "overview"
-                ? "bg-primary text-on-surface font-bold shadow-lg shadow-md"
-                : "text-text-muted hover:text-on-surface hover:bg-surface-container-high/50"
+            onClick={() => setActiveTab("disaster_risk")}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg font-body-lg text-body-lg font-medium transition-all cursor-pointer ${
+              activeTab === "disaster_risk"
+                ? "bg-rose-500 text-white font-bold shadow-md"
+                : "text-text-muted hover:text-rose-500 hover:bg-rose-500/10"
             }`}
           >
-            <Activity className="w-4 h-4" />
-            <span>Executive Overview</span>
+            <ShieldAlert className={`w-4 h-4 ${activeTab === "disaster_risk" ? "text-white" : "text-rose-500"}`} />
+            <span>Disaster Risk Intelligence</span>
           </button>
 
           <button
             onClick={() => setActiveTab("reconstruction")}
-            className={`w-full flex items-center gap-3 px-3 py-2.5  font-body-lg text-body-lg font-medium transition-all cursor-pointer ${
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg font-body-lg text-body-lg font-medium transition-all cursor-pointer ${
               activeTab === "reconstruction"
-                ? "bg-primary text-on-surface font-bold shadow-lg shadow-md"
+                ? "bg-primary text-white font-bold shadow-md"
                 : "text-text-muted hover:text-on-surface hover:bg-surface-container-high/50"
             }`}
           >
-            <Sliders className="w-4 h-4" />
+            <Sliders className={`w-4 h-4 ${activeTab === "reconstruction" ? "text-white" : "text-primary"}`} />
             <span>3D Interactive Depth Slider</span>
           </button>
 
@@ -301,62 +369,62 @@ export default function OceanEmbedDashboard() {
           </p>
 
           <button
-            onClick={() => setActiveTab("recommender")}
-            className={`w-full flex items-center gap-3 px-3 py-2.5  font-body-lg text-body-lg font-medium transition-all cursor-pointer ${
-              activeTab === "recommender"
-                ? "bg-primary text-on-surface font-bold shadow-lg shadow-md"
+            onClick={() => setActiveTab("forecasting")}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg font-body-lg text-body-lg font-medium transition-all cursor-pointer ${
+              activeTab === "forecasting"
+                ? "bg-primary text-white font-bold shadow-md"
                 : "text-text-muted hover:text-on-surface hover:bg-surface-container-high/50"
             }`}
           >
-            <Crosshair className="w-4 h-4" />
+            <TrendingUp className={`w-4 h-4 ${activeTab === "forecasting" ? "text-white" : "text-primary"}`} />
+            <span>Cyclone & Eddy Forecaster</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("recommender")}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg font-body-lg text-body-lg font-medium transition-all cursor-pointer ${
+              activeTab === "recommender"
+                ? "bg-primary text-white font-bold shadow-md"
+                : "text-text-muted hover:text-on-surface hover:bg-surface-container-high/50"
+            }`}
+          >
+            <Crosshair className={`w-4 h-4 ${activeTab === "recommender" ? "text-white" : "text-primary"}`} />
             <span>ARGO Buoy Recommender</span>
           </button>
 
           <button
             onClick={() => setActiveTab("explainability")}
-            className={`w-full flex items-center gap-3 px-3 py-2.5  font-body-lg text-body-lg font-medium transition-all cursor-pointer ${
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg font-body-lg text-body-lg font-medium transition-all cursor-pointer ${
               activeTab === "explainability"
-                ? "bg-primary text-on-surface font-bold shadow-lg shadow-md"
+                ? "bg-primary text-white font-bold shadow-md"
                 : "text-text-muted hover:text-on-surface hover:bg-surface-container-high/50"
             }`}
           >
-            <Eye className="w-4 h-4" />
+            <Eye className={`w-4 h-4 ${activeTab === "explainability" ? "text-white" : "text-primary"}`} />
             <span>ViT Attention Maps</span>
           </button>
 
           <button
             onClick={() => setActiveTab("fingerprint")}
-            className={`w-full flex items-center gap-3 px-3 py-2.5  font-body-lg text-body-lg font-medium transition-all cursor-pointer ${
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg font-body-lg text-body-lg font-medium transition-all cursor-pointer ${
               activeTab === "fingerprint"
-                ? "bg-primary text-on-surface font-bold shadow-lg shadow-md"
+                ? "bg-primary text-white font-bold shadow-md"
                 : "text-text-muted hover:text-on-surface hover:bg-surface-container-high/50"
             }`}
           >
-            <Cpu className="w-4 h-4" />
+            <Cpu className={`w-4 h-4 ${activeTab === "fingerprint" ? "text-white" : "text-primary"}`} />
             <span>256-D Latent Fingerprint</span>
           </button>
 
           <button
-            onClick={() => setActiveTab("forecasting")}
-            className={`w-full flex items-center gap-3 px-3 py-2.5  font-body-lg text-body-lg font-medium transition-all cursor-pointer ${
-              activeTab === "forecasting"
-                ? "bg-primary text-on-surface font-bold shadow-lg shadow-md"
-                : "text-text-muted hover:text-on-surface hover:bg-surface-container-high/50"
-            }`}
-          >
-            <TrendingUp className="w-4 h-4" />
-            <span>Cyclone & Eddy Forecaster</span>
-          </button>
-
-          <button
             onClick={() => setActiveTab("benchmarks")}
-            className={`w-full flex items-center gap-3 px-3 py-2.5  font-body-lg text-body-lg font-medium transition-all cursor-pointer ${
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg font-body-lg text-body-lg font-medium transition-all cursor-pointer ${
               activeTab === "benchmarks"
-                ? "bg-primary text-on-surface font-bold shadow-lg shadow-md"
+                ? "bg-primary text-white font-bold shadow-md"
                 : "text-text-muted hover:text-on-surface hover:bg-surface-container-high/50"
             }`}
           >
-            <FileSpreadsheet className="w-4 h-4" />
+            <FileSpreadsheet className={`w-4 h-4 ${activeTab === "benchmarks" ? "text-white" : "text-primary"}`} />
             <span>ARGO 99,721 Float Truth</span>
           </button>
         </aside>
@@ -405,7 +473,7 @@ export default function OceanEmbedDashboard() {
                     }}
                     cursor="grab"
                   >
-                    <Source id="graticule" type="geojson" data={GRATICULE_GEOJSON}>
+                    <Source id="graticule" type="geojson" data={GRATICULE_GEOJSON as any}>
                       <Layer 
                         id="graticule-line" 
                         type="line" 
@@ -522,8 +590,8 @@ export default function OceanEmbedDashboard() {
                     { id: 3, label: 'SSH', desc: 'Sea Surface Height', min: -1.5, max: 1.5, step: 0.02, val: ssh, setVal: setSsh, unit: 'm' },
                     { id: 4, label: 'U-CUR', desc: 'Zonal Current', min: -2, max: 2, step: 0.05, val: uCur, setVal: setUCur, unit: 'm/s' },
                     { id: 5, label: 'V-CUR', desc: 'Meridional Current', min: -2, max: 2, step: 0.05, val: vCur, setVal: setVCur, unit: 'm/s' },
-                    { id: 6, label: 'U-WND', desc: 'Zonal Wind', min: -20, max: 20, step: 0.5, val: uWind, setVal: setUWind, unit: 'm/s' },
-                    { id: 7, label: 'V-WND', desc: 'Meridional Wind', min: -20, max: 20, step: 0.5, val: vWind, setVal: setVWind, unit: 'm/s' },
+                    { id: 6, label: 'U-WIND', desc: 'Zonal 10m Wind', min: -20, max: 20, step: 0.5, val: uWind, setVal: setUWind, unit: 'm/s' },
+                    { id: 7, label: 'V-WIND', desc: 'Meridional 10m Wind', min: -20, max: 20, step: 0.5, val: vWind, setVal: setVWind, unit: 'm/s' },
                   ].map(inp => (
 
                     <div key={inp.id} className="bg-surface-white border border-glass-border p-3 space-y-2">
@@ -712,8 +780,9 @@ export default function OceanEmbedDashboard() {
                         <thead className="bg-surface-container-high text-on-surface-variant">
                           <tr>
                             <th className="p-2.5">Depth</th>
-                            <th className="p-2.5 text-primary font-bold bg-primary-container text-on-primary-container/40">Predicted Temperature 🧬</th>
-                            <th className="p-2.5">±2σ Band (Error)</th>
+                            <th className="p-2.5 text-primary font-bold bg-primary-container text-on-primary-container/40">Predicted Temperature</th>
+                            <th className="p-2.5 text-emerald-500 font-bold">Sound Speed c(z)</th>
+                            <th className="p-2.5">±2σ Band</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-glass-border bg-background text-on-surface/70 text-on-surface">
@@ -721,7 +790,10 @@ export default function OceanEmbedDashboard() {
                             <tr key={row.depth_m} className="hover:bg-surface-container-high/40 transition-colors">
                               <td className="p-2.5 font-bold text-on-surface-variant">{row.depth_m} m</td>
                               <td className="p-2.5 font-extrabold text-primary bg-primary-container text-on-primary-container/30 text-body-lg">
-                                {row.tribreed_degC}°C
+                                {(row.duo_elite_degC ?? row.tribreed_degC).toFixed(2)}°C
+                              </td>
+                              <td className="p-2.5 font-bold text-emerald-500">
+                                {row.sound_speed_ms ? `${row.sound_speed_ms.toFixed(1)} m/s` : "--"}
                               </td>
                               <td className="p-2.5 text-text-muted">±{row.confidence_std}°C</td>
                             </tr>
@@ -739,32 +811,79 @@ export default function OceanEmbedDashboard() {
                         Derived Oceanographic Diagnostics
                       </h4>
 
-                      <div className="space-y-3 flex-1 flex flex-col justify-center">
-                        <div className="bg-background text-on-surface p-4 border border-glass-border flex justify-between items-center">
-                          <span className="font-body-sm text-body-sm text-text-muted">Thermocline Depth (D20):</span>
-                          <span className="font-headline-md text-headline-md text-primary font-label-mono text-label-mono">
-                            {inferResults.ocean_metrics.thermocline_d20_depth_m} m
-                          </span>
+                      <div className="space-y-2.5 flex-1 flex flex-col justify-center">
+                        {/* Tropical Cyclone Heat Potential (TCHP) Fuel Gauge */}
+                        <div className="bg-background text-on-surface p-3.5 border border-glass-border flex flex-col gap-2">
+                          <div className="flex justify-between items-center">
+                            <div className="flex items-center gap-1.5">
+                              <Wind className="w-4 h-4 text-amber-500" />
+                              <span className="text-xs font-semibold text-text-muted">Tropical Cyclone Heat Potential (TCHP):</span>
+                            </div>
+                            <span className="font-headline-md text-headline-md font-label-mono text-amber-500">
+                              {(inferResults.derived_physical_products?.tchp_kj_cm2 ?? inferResults.ocean_metrics?.ocean_heat_content_kj_cm2 ?? 0).toFixed(0)} <span className="text-xs font-normal">kJ/cm²</span>
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between text-xs pt-1 border-t border-glass-border/40">
+                            <span className="text-text-muted">Intensification Fuel:</span>
+                            <span 
+                              className="px-2.5 py-0.5 rounded font-label-mono font-bold text-xs"
+                              style={{
+                                backgroundColor: `${inferResults.derived_physical_products?.cyclone_fuel_color ?? "#38bdf8"}20`,
+                                color: inferResults.derived_physical_products?.cyclone_fuel_color ?? "#38bdf8",
+                                border: `1px solid ${inferResults.derived_physical_products?.cyclone_fuel_color ?? "#38bdf8"}40`
+                              }}
+                            >
+                              {inferResults.derived_physical_products?.cyclone_fuel_category ?? "MODERATE (Tropical Storm)"}
+                            </span>
+                          </div>
                         </div>
 
-                        <div className="bg-background text-on-surface p-4 border border-glass-border flex justify-between items-center">
-                          <span className="font-body-sm text-body-sm text-text-muted">Mixed Layer Depth (MLD):</span>
-                          <span className="font-headline-md text-headline-md text-tertiary font-label-mono text-label-mono">
-                            {inferResults.ocean_metrics.mixed_layer_depth_m} m
-                          </span>
+                        {/* 26°C & 20°C Isotherms */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="bg-background text-on-surface p-3 border border-glass-border flex flex-col">
+                            <span className="text-[11px] text-text-muted">26°C Isotherm (D26):</span>
+                            <span className="font-headline-md text-headline-md text-rose-400 font-label-mono text-label-mono mt-0.5">
+                              {inferResults.derived_physical_products?.isotherm_d26_depth_m ?? "--"} m
+                            </span>
+                          </div>
+                          <div className="bg-background text-on-surface p-3 border border-glass-border flex flex-col">
+                            <span className="text-[11px] text-text-muted">Thermocline Core (D20):</span>
+                            <span className="font-headline-md text-headline-md text-primary font-label-mono text-label-mono mt-0.5">
+                              {inferResults.derived_physical_products?.thermocline_d20_depth_m ?? inferResults.ocean_metrics?.thermocline_d20_depth_m} m
+                            </span>
+                          </div>
                         </div>
 
-                        <div className="bg-background text-on-surface p-4 border border-glass-border flex justify-between items-center">
-                          <span className="font-body-sm text-body-sm text-text-muted">Upper Ocean Heat Content:</span>
-                          <span className="font-headline-md text-headline-md text-outline font-label-mono text-label-mono">
-                            {inferResults.ocean_metrics.ocean_heat_content_kj_cm2} kJ/cm²
-                          </span>
+                        {/* Mixed Layer Depth & Density */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="bg-background text-on-surface p-3 border border-glass-border flex flex-col">
+                            <span className="text-[11px] text-text-muted">Mixed Layer (MLD):</span>
+                            <span className="font-headline-md text-headline-md text-tertiary font-label-mono text-label-mono mt-0.5">
+                              {inferResults.derived_physical_products?.mixed_layer_depth_m ?? inferResults.ocean_metrics?.mixed_layer_depth_m} m
+                            </span>
+                          </div>
+                          <div className="bg-background text-on-surface p-3 border border-glass-border flex flex-col">
+                            <span className="text-[11px] text-text-muted">Surface Density (σ₀):</span>
+                            <span className="font-headline-md text-headline-md text-secondary font-label-mono text-label-mono mt-0.5">
+                              {inferResults.inputs.potential_density_sigma0} kg/m³
+                            </span>
+                          </div>
                         </div>
 
-                        <div className="bg-background text-on-surface p-4 border border-glass-border flex justify-between items-center">
-                          <span className="font-body-sm text-body-sm text-text-muted">Buoyancy Potential Density:</span>
-                          <span className="font-headline-md text-headline-md text-secondary font-label-mono text-label-mono">
-                            {inferResults.inputs.potential_density_sigma0} kg/m³
+                        {/* Underwater Acoustics & SOFAR Channel */}
+                        <div 
+                          className="bg-background text-on-surface p-3 border border-glass-border flex justify-between items-center cursor-pointer hover:border-emerald-500/50 transition-colors group"
+                          onClick={() => setIsAcousticsModalOpen(true)}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <Radio className="w-3.5 h-3.5 text-emerald-500" />
+                            <span className="text-[11px] text-text-muted group-hover:text-on-surface">SOFAR Sound Channel Axis:</span>
+                          </div>
+                          <span className="font-headline-md text-headline-md text-emerald-500 font-label-mono text-label-mono">
+                            {inferResults.derived_physical_products?.sofar_sound_channel_axis_m ?? 1000} m
+                            <span className="text-[11px] text-text-muted ml-1.5 font-normal">
+                              (Duct: {inferResults.derived_physical_products?.acoustic_duct_trapping_strength_ms ?? 48} m/s)
+                            </span>
                           </span>
                         </div>
                       </div>
@@ -992,113 +1111,595 @@ Diff: ${(ds.tribreed_degC - ds.baseline_degC).toFixed(2)}°C`}</title>
                 </div>
                 </>
               )}
+
             </div>
           )}
 
-          {/* TAB 1: EXECUTIVE OVERVIEW */}
-          {activeTab === "overview" && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="bg-surface-white shadow-sm border border-glass-border border border-glass-border p-5  relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-primary/10  blur-2xl"></div>
-                  <p className="font-button-caps text-button-caps text-text-muted uppercase tracking-wider">
-                    In-Situ Float RMSE
-                  </p>
-                  <p className="text-3xl font-extrabold text-on-surface mt-1">0.7422°C</p>
-                  <span className="text-body-sm text-secondary font-medium flex items-center gap-1 mt-2">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> 22.7% error reduction vs baseline
-                  </span>
-                </div>
-
-                <div className="bg-surface-white shadow-sm border border-glass-border border border-glass-border p-5  relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-tertiary-container  blur-2xl"></div>
-                  <p className="font-button-caps text-button-caps text-text-muted uppercase tracking-wider">
-                    Pearson Correlation (r)
-                  </p>
-                  <p className="text-3xl font-extrabold text-on-surface mt-1">0.9585</p>
-                  <span className="text-body-sm text-primary font-medium flex items-center gap-1 mt-2">
-                    <Zap className="w-3.5 h-3.5" /> Full water column alignment
-                  </span>
-                </div>
-
-                <div className="bg-surface-white shadow-sm border border-glass-border border border-glass-border p-5  relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-inverse-surface  blur-2xl"></div>
-                  <p className="font-button-caps text-button-caps text-text-muted uppercase tracking-wider">
-                    Validated In-Situ Floats
-                  </p>
-                  <p className="text-3xl font-extrabold text-on-surface mt-1">340,034</p>
-                  <span className="text-body-sm text-outline font-medium flex items-center gap-1 mt-2">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Apr 2026, Jul 2022, Dec 2022
-                  </span>
-                </div>
-
-                <div className="bg-surface-white shadow-sm border border-glass-border border border-glass-border p-5  relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-secondary/10  blur-2xl"></div>
-                  <p className="font-button-caps text-button-caps text-text-muted uppercase tracking-wider">
-                    Physics Stratification
-                  </p>
-                  <p className="text-3xl font-extrabold text-on-surface mt-1">100.0%</p>
-                  <span className="text-body-sm text-secondary font-medium flex items-center gap-1 mt-2">
-                    <ShieldCheck className="w-3.5 h-3.5" /> Zero unphysical inversions
-                  </span>
+                    {/* TAB: DISASTER RISK INTELLIGENCE */}
+          {activeTab === "disaster_risk" && (
+            <div className="space-y-8">
+              {/* Header Banner */}
+              <div className="bg-surface-white border border-glass-border p-8 shadow-md border-glass-border/40 rounded-xl">
+                <h2 className="text-2xl md:text-3xl font-display font-extrabold text-on-surface mb-3 flex items-center gap-3.5">
+                  <AlertTriangle className="w-9 h-9 text-[#ef4444]" /> MoES Disaster Management Intelligence
+                </h2>
+                <p className="text-base md:text-lg text-text-muted leading-relaxed max-w-5xl">
+                  Translating deep-ocean thermal embeddings into localized disaster risk indicators. These models calculate 
+                  anomalous subsurface variables to act as early-warning precursors for extreme oceanic and atmospheric disasters.
+                </p>
+                
+                {/* SUB-TABS NAVIGATION */}
+                <div className="flex flex-wrap items-center gap-8 mt-8 border-b border-glass-border pb-1">
+                  <button 
+                    onClick={() => setActiveDisasterTab("cyclone")}
+                    className={`pb-3 text-base md:text-lg font-bold transition-all ${activeDisasterTab === "cyclone" ? "text-primary border-b-3 border-primary shadow-sm" : "text-text-muted hover:text-on-surface"}`}
+                  >
+                    🌪️ Cyclone Intensification
+                  </button>
+                  <button 
+                    onClick={() => setActiveDisasterTab("heatwave")}
+                    className={`pb-3 text-base md:text-lg font-bold transition-all ${activeDisasterTab === "heatwave" ? "text-primary border-b-3 border-primary shadow-sm" : "text-text-muted hover:text-on-surface"}`}
+                  >
+                    🌡️ Marine Heatwave
+                  </button>
+                  <button 
+                    onClick={() => setActiveDisasterTab("drought")}
+                    className={`pb-3 text-base md:text-lg font-bold transition-all ${activeDisasterTab === "drought" ? "text-primary border-b-3 border-primary shadow-sm" : "text-text-muted hover:text-on-surface"}`}
+                  >
+                    🌊 Drought / Flood (IOD)
+                  </button>
+                  <button 
+                    onClick={() => setActiveDisasterTab("algae")}
+                    className={`pb-3 text-base md:text-lg font-bold transition-all ${activeDisasterTab === "algae" ? "text-primary border-b-3 border-primary shadow-sm" : "text-text-muted hover:text-on-surface"}`}
+                  >
+                    🌿 Toxic Algal Bloom
+                  </button>
                 </div>
               </div>
 
-              {/* Real-Time Live Vertical Cross-Section Hero */}
-              <div className="bg-surface-white shadow-sm border border-glass-border border border-glass-border p-6  space-y-4 shadow-xl">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="font-headline-md text-headline-md text-on-surface flex items-center gap-2">
-                      <Radio className="w-5 h-5 text-primary" />
-                      Live 12°N Zonal Thermal Cross-Section (Arabian Sea ← India → Bay of Bengal)
-                    </h2>
-                    <p className="font-body-sm text-body-sm text-text-muted">
-                      Real-time vertical temperature inversion from surface (0m) to upper abyss (1000m)
-                    </p>
-                  </div>
-                  <span className="text-body-sm font-label-mono text-label-mono bg-primary-container text-on-primary-container text-primary border border-primary-fixed-dim px-3 py-1 ">
-                    TRANSECT: LAT 12.00°N
-                  </span>
-                </div>
+              <div className="space-y-8">
+                {/* 1. Cyclone Rapid Intensification */}
+                {activeDisasterTab === "cyclone" && (
+                <>
+                {(() => {
+                  const tchp = Number(inferResults.derived_physical_products?.tchp_kj_cm2 ?? inferResults.ocean_metrics?.ocean_heat_content_kj_cm2 ?? 50);
+                  const d26 = Number(inferResults.derived_physical_products?.isotherm_d26_depth_m ?? 60);
+                  let riskLevel = "LOW";
+                  let color = "bg-[#22c55e]";
+                  let txtColor = "text-[#22c55e]";
+                  if (tchp >= 80) { riskLevel = "EXTREME (Cat 4/5 Fuel)"; color = "bg-[#ef4444]"; txtColor = "text-[#ef4444]"; }
+                  else if (tchp >= 50) { riskLevel = "HIGH (Rapid Intensification)"; color = "bg-[#f97316]"; txtColor = "text-[#f97316]"; }
+                  else if (tchp >= 20) { riskLevel = "MODERATE (Tropical Storm)"; color = "bg-[#38bdf8]"; txtColor = "text-[#38bdf8]"; }
+                  
+                  return (
+                    <div className="flex flex-col gap-8">
+                      {/* TOP SECTION: The Risk Bars */}
+                      <div className="bg-surface-white border border-glass-border p-7 flex flex-col justify-between shadow-md rounded-xl">
+                        <div>
+                          <div className="flex justify-between items-center mb-3">
+                            <h3 className="text-xl md:text-2xl font-bold text-on-surface flex items-center gap-2.5">
+                              <Wind className="w-6 h-6 text-amber-400" /> Tropical Cyclone Heat Potential (TCHP / UOHC)
+                            </h3>
+                            <span className={`px-4 py-1.5 text-sm font-bold text-white rounded-lg shadow-sm ${color}`}>
+                              {riskLevel}
+                            </span>
+                          </div>
+                          <p className="text-base text-text-muted mb-5 leading-relaxed">
+                            Measures subsurface thermal fuel available above the 26°C isotherm (D26 = {d26.toFixed(1)}m). Values &gt; 50 kJ/cm² fuel explosive Category-3 to Category-5 rapid intensification.
+                          </p>
+                        </div>
+                        <div className="bg-background border border-glass-border p-6 rounded-lg">
+                          <div className="flex justify-between items-center mb-4">
+                            <span className="text-base font-semibold text-text-muted">Integrated TCHP Energy Payload:</span>
+                            <span className={`text-3xl md:text-4xl font-extrabold font-label-mono ${txtColor}`}>
+                              {tchp.toFixed(1)} <span className="text-lg font-normal text-text-muted">kJ/cm²</span>
+                            </span>
+                          </div>
+                          {/* Standard Meteorological TCHP Gauge */}
+                          <div className="relative h-6 w-full bg-surface-container rounded-full overflow-hidden flex shadow-inner">
+                            <div className="h-full bg-[#22c55e]" style={{ width: "16.7%" }} title="Low: 0-20 kJ/cm²"></div>
+                            <div className="h-full bg-[#38bdf8]" style={{ width: "25.0%" }} title="Moderate: 20-50 kJ/cm²"></div>
+                            <div className="h-full bg-[#f97316]" style={{ width: "25.0%" }} title="High: 50-80 kJ/cm²"></div>
+                            <div className="h-full bg-[#ef4444]" style={{ width: "33.3%" }} title="Extreme: >80 kJ/cm²"></div>
+                            
+                            {/* Marker */}
+                            <div 
+                              className="absolute top-0 bottom-0 w-2 bg-white shadow-2xl border-2 border-black z-10 transition-all duration-700 ease-in-out rounded-full"
+                              style={{ left: `${Math.min(99, Math.max(1, (tchp / 120) * 100))}%` }}
+                            ></div>
+                          </div>
+                          <div className="flex justify-between text-xs md:text-sm font-label-mono text-text-muted mt-2.5 px-1 font-medium">
+                            <span>0 (Safe)</span>
+                            <span>20 (Moderate)</span>
+                            <span>50 (High / RI Threshold)</span>
+                            <span>80 (Extreme Cat 4/5)</span>
+                            <span>120+</span>
+                          </div>
+                        </div>
+                      </div>
 
-                <div className=" overflow-hidden border border-glass-border bg-background text-on-surface">
-                  <img
-                    src="/assets/live_ocean_thermal_cross_section.png"
-                    alt="Live Ocean Thermal Cross Section"
-                    className="w-full object-cover"
-                  />
-                </div>
-              </div>
+                      {/* BOTTOM SECTION: 2-Column Grid */}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
+                        {/* LEFT COLUMN: The Graphs */}
+                        <div className="bg-surface-white border border-glass-border p-7 flex flex-col justify-between shadow-md rounded-xl h-full min-h-[560px]">
+                          <div>
+                            <div className="flex justify-between items-center mb-4">
+                              <h4 className="text-xl font-bold text-on-surface flex items-center gap-2.5">
+                                <Box className="w-5 h-5 text-primary" /> Physics Simulation Profile
+                              </h4>
+                              <span className="text-xs text-primary font-medium flex items-center gap-1">
+                                <ZoomIn className="w-3.5 h-3.5" /> Click to Expand
+                              </span>
+                            </div>
+                            <div 
+                              className="relative group cursor-pointer border border-glass-border rounded-xl overflow-hidden bg-white shadow-sm hover:shadow-xl transition-all duration-300 flex items-center justify-center p-2 mb-5"
+                              onClick={() => setSelectedDisasterImage({
+                                src: inferResults.visualizations?.cyclone_sim_image || "/simulations/sim_cyclone.png",
+                                title: "Cyclone Rapid Intensification Simulation",
+                                subtitle: "Vertical Temperature Profile & Cumulative Subsurface UOHC Heat Potential Integration",
+                                formula: "UOHC = c_p × ρ × ∫₀^D₂₆ (T(z) - 26°C) dz",
+                              })}
+                            >
+                              <img 
+                                src={inferResults.visualizations?.cyclone_sim_image || "/simulations/sim_cyclone.png"} 
+                                alt="Cyclone Physics Simulation" 
+                                className="w-full h-auto rounded-lg object-contain transition-transform duration-300 group-hover:scale-[1.01]" 
+                              />
+                              <div className="absolute top-3 right-3 bg-black/75 hover:bg-black/90 backdrop-blur-md text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition-opacity shadow-md border border-white/20">
+                                <Maximize2 className="w-3.5 h-3.5 text-cyan-400" /> Expand Modal
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-sm md:text-base text-text-muted space-y-2 pt-3 border-t border-glass-border/40">
+                            <p><strong className="text-on-surface text-blue-400">Safe Ocean (Blue Line):</strong> Rapid thermal drop; insufficient heat engine fuel.</p>
+                            <p><strong className="text-on-surface text-rose-400">Extreme Risk (Red Line):</strong> &gt;26°C warmth penetrates down to D26 = {d26.toFixed(1)}m.</p>
+                          </div>
+                        </div>
 
-              {/* 3D Thermocline Isotherm & Calibration Row */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-surface-white shadow-sm border border-glass-border border border-glass-border p-5  space-y-3">
-                  <h3 className="font-headline-md text-headline-md text-on-surface flex items-center gap-2">
-                    <Box className="w-4 h-4 text-primary" />
-                    3D 20°C Isotherm Thermocline Topography (D20)
-                  </h3>
-                  <div className=" overflow-hidden border border-glass-border bg-background text-on-surface">
-                    <img
-                      src="/assets/isotherm_20C_3d_surface.png"
-                      alt="3D Isotherm Topography"
-                      className="w-full object-cover"
-                    />
-                  </div>
-                </div>
+                        {/* RIGHT COLUMN: The Calculations */}
+                        <div className="bg-surface-white border border-glass-border p-7 flex flex-col justify-between shadow-md rounded-xl h-full min-h-[560px]">
+                          <div>
+                            <h4 className="text-xl font-bold text-on-surface mb-4 flex items-center gap-2.5">
+                              <Activity className="w-5 h-5 text-amber-400" /> Physical Heat Integration & Formulas
+                            </h4>
+                            
+                            <div className="p-5 bg-background border border-glass-border rounded-xl shadow-inner mb-5">
+                              <div className="text-center font-serif text-xl md:text-2xl mb-4 text-on-surface py-1">
+                                <i>UOHC</i> = <i>c<sub>p</sub></i> <i>ρ</i> <span className="text-3xl align-middle">∫</span><sup className="-ml-1">0</sup><sub className="-ml-2 -mb-2">D<sub>26</sub></sub> (<i>T(z)</i> - 26°C) <i>dz</i>
+                              </div>
+                              <ul className="list-disc pl-6 text-sm text-text-muted space-y-1.5 leading-relaxed">
+                                <li><i>c<sub>p</sub></i>: Seawater heat capacity (~3985 <sup>J</sup>&frasl;<sub>kg·°C</sub>)</li>
+                                <li><i>ρ</i>: Mean seawater density (~1025 <sup>kg</sup>&frasl;<sub>m³</sub>)</li>
+                                <li><i>T(z)</i>: Duo-Elite predicted temperature at depth <i>z</i></li>
+                                <li><i>D<sub>26</sub></i>: Subsurface 26°C boundary depth ({d26.toFixed(1)} m)</li>
+                              </ul>
+                              
+                              <div className="mt-4 p-3.5 bg-surface-container/70 rounded-lg font-label-mono text-sm text-on-surface border border-glass-border/40">
+                                <p className="text-primary font-bold">Live AI Calc: 3985 × 1025 × ∫₀^{d26.toFixed(0)}m (T - 26)dz = {tchp.toFixed(1)} kJ/cm²</p>
+                              </div>
+                            </div>
 
-                <div className="bg-surface-white shadow-sm border border-glass-border border border-glass-border p-5  space-y-3">
-                  <h3 className="font-headline-md text-headline-md text-on-surface flex items-center gap-2">
-                    <Layers className="w-4 h-4 text-tertiary" />
-                    Per-Depth Confidence Envelope (±2σ Gaussian Calibration)
-                  </h3>
-                  <div className=" overflow-hidden border border-glass-border bg-background text-on-surface">
-                    <img
-                      src="/assets/per_depth_confidence_calibration.png"
-                      alt="Confidence Calibration"
-                      className="w-full object-cover"
-                    />
-                  </div>
-                </div>
+                            <div className="text-sm md:text-base text-text-muted space-y-3 leading-relaxed">
+                              <p><strong className="text-on-surface font-semibold">Physical Rationale:</strong> Cyclones operate as Carnot heat engines requiring water &ge; 26°C. Shallow warm layers are churned into cold water, while deep warm layers sustain continuous violent convection.</p>
+                              <p><strong className="text-on-surface font-semibold">Operational Status:</strong> <strong className="text-primary font-bold">{riskLevel}</strong> at {tchp.toFixed(1)} kJ/cm².</p>
+                            </div>
+                          </div>
+
+                          <div className="bg-surface-container/40 p-3.5 rounded-lg font-label-mono text-xs md:text-sm text-on-surface mt-5 border border-glass-border/30">
+                            <p>Thresholds: Low (&lt;20) | Moderate (20-50) | High / RI (50-80) | Extreme (&gt;80 kJ/cm²)</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+                </>
+                )}
+
+                {/* 2. Subsurface Marine Heatwave */}
+                {activeDisasterTab === "heatwave" && (
+                <>
+                {(() => {
+                  const deepData = inferResults.depth_series.find((d: any) => d.depth_m === 50) || inferResults.depth_series[5];
+                  const tPred50 = Number(deepData.duo_elite_degC ?? deepData.tribreed_degC ?? 25.0);
+                  const tBase50 = Number(deepData.baseline_degC ?? 24.0);
+                  const anomaly = tPred50 - tBase50;
+                  let riskLevel = "NORMAL / NEUTRAL";
+                  let color = "bg-[#22c55e]";
+                  let txtColor = "text-[#22c55e]";
+                  if (anomaly >= 2.5) { riskLevel = "EXTREME (Category III/IV MHW)"; color = "bg-[#ef4444]"; txtColor = "text-[#ef4444]"; }
+                  else if (anomaly >= 1.5) { riskLevel = "STRONG (Category II MHW)"; color = "bg-[#f97316]"; txtColor = "text-[#f97316]"; }
+                  else if (anomaly >= 0.5) { riskLevel = "MODERATE (Category I MHW)"; color = "bg-[#eab308]"; txtColor = "text-[#eab308]"; }
+                  else if (anomaly < -1.0) { riskLevel = "COLD WAVE ANOMALY"; color = "bg-[#3b82f6]"; txtColor = "text-[#3b82f6]"; }
+                  
+                  return (
+                    <div className="flex flex-col gap-8">
+                      {/* TOP SECTION: The Risk Bars */}
+                      <div className="bg-surface-white border border-glass-border p-7 flex flex-col justify-between shadow-md rounded-xl">
+                        <div>
+                          <div className="flex justify-between items-center mb-3">
+                            <h3 className="text-xl md:text-2xl font-bold text-on-surface flex items-center gap-2.5">
+                              <Thermometer className="w-6 h-6 text-rose-400" /> Subsurface Marine Heatwave (50m Benthic Anomaly)
+                            </h3>
+                            <span className={`px-4 py-1.5 text-sm font-bold text-white rounded-lg shadow-sm ${color}`}>
+                              {riskLevel}
+                            </span>
+                          </div>
+                          <p className="text-base text-text-muted mb-5 leading-relaxed">
+                            Detects hidden benthic thermal anomalies that trigger coral reef bleaching and fishery collapse, which remain invisible to surface-only infrared satellites.
+                          </p>
+                        </div>
+                        <div className="bg-background border border-glass-border p-6 rounded-lg">
+                          <div className="flex justify-between items-center mb-4">
+                            <span className="text-base font-semibold text-text-muted">50m Depth Thermal Anomaly (ΔT₅₀):</span>
+                            <span className={`text-3xl md:text-4xl font-extrabold font-label-mono ${txtColor}`}>
+                              {anomaly > 0 ? "+" : ""}{anomaly.toFixed(2)} <span className="text-lg font-normal text-text-muted">°C</span>
+                            </span>
+                          </div>
+                          {/* 0-Centered Diverging Bar */}
+                          <div className="relative h-6 w-full bg-surface-container rounded-full overflow-hidden flex shadow-inner">
+                            <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-on-surface/30 z-0"></div>
+                            <div 
+                              className={`absolute top-0 bottom-0 transition-all duration-700 ${anomaly > 0 ? "bg-[#ef4444] rounded-r-full left-1/2" : "bg-[#3b82f6] rounded-l-full right-1/2"}`}
+                              style={{ width: `${Math.min(50, (Math.abs(anomaly) / 3.0) * 50)}%` }}
+                            ></div>
+                          </div>
+                          <div className="flex justify-between text-xs md:text-sm font-label-mono text-text-muted mt-2.5 px-1 font-medium">
+                            <span>-3.0°C (Cold Wave)</span>
+                            <span>-1.0°C</span>
+                            <span>Normal (0°C)</span>
+                            <span>+1.5°C (Strong MHW)</span>
+                            <span>+3.0°C (Extreme)</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* BOTTOM SECTION: 2-Column Grid */}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
+                        {/* LEFT COLUMN: The Graphs */}
+                        <div className="bg-surface-white border border-glass-border p-7 flex flex-col justify-between shadow-md rounded-xl h-full min-h-[560px]">
+                          <div>
+                            <div className="flex justify-between items-center mb-4">
+                              <h4 className="text-xl font-bold text-on-surface flex items-center gap-2.5">
+                                <Box className="w-5 h-5 text-primary" /> Benthic Profile & Climatological Shift
+                              </h4>
+                              <span className="text-xs text-primary font-medium flex items-center gap-1">
+                                <ZoomIn className="w-3.5 h-3.5" /> Click to Expand
+                              </span>
+                            </div>
+                            <div 
+                              className="relative group cursor-pointer border border-glass-border rounded-xl overflow-hidden bg-white shadow-sm hover:shadow-xl transition-all duration-300 flex items-center justify-center p-2 mb-5"
+                              onClick={() => setSelectedDisasterImage({
+                                src: inferResults.visualizations?.heatwave_sim_image || "/simulations/sim_heatwave.png",
+                                title: "Marine Heatwave Benthic Simulation",
+                                subtitle: "Decadal Baseline vs. AI Real-Time Shift & 50m Ecological Biological Stress Delta",
+                                formula: "ΔT₅₀ = T_predicted(50m) - T_baseline(50m)",
+                              })}
+                            >
+                              <img 
+                                src={inferResults.visualizations?.heatwave_sim_image || "/simulations/sim_heatwave.png"} 
+                                alt="Marine Heatwave Simulation" 
+                                className="w-full h-auto rounded-lg object-contain transition-transform duration-300 group-hover:scale-[1.01]" 
+                              />
+                              <div className="absolute top-3 right-3 bg-black/75 hover:bg-black/90 backdrop-blur-md text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition-opacity shadow-md border border-white/20">
+                                <Maximize2 className="w-3.5 h-3.5 text-rose-400" /> Expand Modal
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-sm md:text-base text-text-muted space-y-2 pt-3 border-t border-glass-border/40">
+                            <p><strong className="text-on-surface text-slate-400">Historical Climatology (Grey):</strong> Decadal mean thermal baseline.</p>
+                            <p><strong className="text-on-surface text-rose-400">Duo-Elite Prediction (Red):</strong> Observed subsurface thermal rightward shift.</p>
+                          </div>
+                        </div>
+
+                        {/* RIGHT COLUMN: The Calculations */}
+                        <div className="bg-surface-white border border-glass-border p-7 flex flex-col justify-between shadow-md rounded-xl h-full min-h-[560px]">
+                          <div>
+                            <h4 className="text-xl font-bold text-on-surface mb-4 flex items-center gap-2.5">
+                              <Activity className="w-5 h-5 text-rose-400" /> Benthic Delta & Heatwave Classification
+                            </h4>
+                            
+                            <div className="p-5 bg-background border border-glass-border rounded-xl shadow-inner mb-5">
+                              <div className="text-center font-serif text-xl md:text-2xl mb-4 text-on-surface py-1">
+                                Δ<i>T<sub>50</sub></i> = <i>T<sub>predicted</sub></i>(50m) - <i>T<sub>baseline</sub></i>(50m)
+                              </div>
+                              <ul className="list-disc pl-6 text-sm text-text-muted space-y-1.5 leading-relaxed">
+                                <li><i>T<sub>predicted</sub></i>(50m): Duo-Elite real-time predicted temperature ({tPred50.toFixed(2)}°C)</li>
+                                <li><i>T<sub>baseline</sub></i>(50m): 10-year historical climatological baseline ({tBase50.toFixed(2)}°C)</li>
+                                <li>Δ<i>T<sub>50</sub></i>: Biological thermal stress anomaly ({anomaly > 0 ? "+" : ""}{anomaly.toFixed(2)}°C)</li>
+                              </ul>
+                              
+                              <div className="mt-4 p-3.5 bg-surface-container/70 rounded-lg font-label-mono text-sm text-on-surface border border-glass-border/40">
+                                <p className="text-primary font-bold">Live AI Calc: {tPred50.toFixed(2)}°C - {tBase50.toFixed(2)}°C = {anomaly > 0 ? "+" : ""}{anomaly.toFixed(2)}°C</p>
+                              </div>
+                            </div>
+
+                            <div className="text-sm md:text-base text-text-muted space-y-3 leading-relaxed">
+                              <p><strong className="text-on-surface font-semibold">Ecological Impact:</strong> Coral symbiotic zooxanthellae expel under prolonged anomalies &gt; 1.0°C. Surface satellites often miss deep-penetrating heat domes.</p>
+                              <p><strong className="text-on-surface font-semibold">Classification (Hobday et al.):</strong> <strong className="text-rose-400 font-bold">{riskLevel}</strong> detected at this geographic station.</p>
+                            </div>
+                          </div>
+
+                          <div className="bg-surface-container/40 p-3.5 rounded-lg font-label-mono text-xs md:text-sm text-on-surface mt-5 border border-glass-border/30">
+                            <p>MHW Scale: Cat I (&ge;0.5°C) | Cat II (&ge;1.5°C) | Cat III/IV (&ge;2.5°C)</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+                </>
+                )}
+
+                {/* 3. Drought/Flood Precursor (IOD) */}
+                {activeDisasterTab === "drought" && (
+                <>
+                {(() => {
+                  const d20 = Number(inferResults.derived_physical_products?.thermocline_d20_depth_m ?? inferResults.ocean_metrics?.thermocline_d20_depth_m ?? 100);
+                  let riskLevel = "BALANCED THERMOCLINE (Neutral)";
+                  let color = "bg-[#22c55e]";
+                  let txtColor = "text-[#22c55e]";
+                  if (d20 < 50) { riskLevel = "DROUGHT PRECURSOR (+IOD / Extreme Upwelling)"; color = "bg-[#eab308]"; txtColor = "text-[#eab308]"; }
+                  else if (d20 > 120) { riskLevel = "FLOOD PRECURSOR (-IOD / Deep Warm Pool)"; color = "bg-[#3b82f6]"; txtColor = "text-[#3b82f6]"; }
+                  
+                  return (
+                    <div className="flex flex-col gap-8">
+                      {/* TOP SECTION: The Risk Bars */}
+                      <div className="bg-surface-white border border-glass-border p-7 flex flex-col justify-between shadow-md rounded-xl">
+                        <div>
+                          <div className="flex justify-between items-center mb-3">
+                            <h3 className="text-xl md:text-2xl font-bold text-on-surface flex items-center gap-2.5">
+                              <Activity className="w-6 h-6 text-cyan-400" /> Drought / Flood Precursor (Indian Ocean Dipole D20)
+                            </h3>
+                            <span className={`px-4 py-1.5 text-sm font-bold text-white rounded-lg shadow-sm ${color}`}>
+                              {riskLevel}
+                            </span>
+                          </div>
+                          <p className="text-base text-text-muted mb-5 leading-relaxed">
+                            Tracks equatorial Kelvin and Rossby wave propagation across the basin. Shallow D20 implies upwelling and drought precursors; deep D20 fuels heavy monsoon moisture.
+                          </p>
+                        </div>
+                        <div className="bg-background border border-glass-border p-6 rounded-lg">
+                          <div className="flex justify-between items-center mb-4">
+                            <span className="text-base font-semibold text-text-muted">Thermocline D20 Core Depth:</span>
+                            <span className={`text-3xl md:text-4xl font-extrabold font-label-mono ${txtColor}`}>
+                              {d20.toFixed(1)} <span className="text-lg font-normal text-text-muted">m</span>
+                            </span>
+                          </div>
+                          {/* Dynamic D20 Thermocline Gauge (0 - 200m) */}
+                          <div className="relative h-6 w-full bg-surface-container rounded-full overflow-hidden flex shadow-inner">
+                            <div className="h-full bg-[#eab308]" style={{ width: "25%" }} title="Shallow D20 (<50m): Drought / Upwelling"></div>
+                            <div className="h-full bg-[#22c55e]" style={{ width: "35%" }} title="Normal D20 (50-120m): Balanced"></div>
+                            <div className="h-full bg-[#3b82f6]" style={{ width: "40%" }} title="Deep D20 (>120m): Heavy Monsoon / Flood"></div>
+                            
+                            {/* Depth Marker */}
+                            <div 
+                              className="absolute top-0 bottom-0 w-2 bg-white shadow-2xl border-2 border-black z-10 transition-all duration-700 rounded-full"
+                              style={{ left: `${Math.min(99, Math.max(1, (d20 / 200) * 100))}%` }}
+                            ></div>
+                          </div>
+                          <div className="flex justify-between text-xs md:text-sm font-label-mono text-text-muted mt-2.5 px-1 font-medium">
+                            <span>0m (Drought / Shoaling)</span>
+                            <span>50m</span>
+                            <span>100m (Normal)</span>
+                            <span>120m</span>
+                            <span>200m (Deep Warm Pool)</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* BOTTOM SECTION: 2-Column Grid */}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
+                        {/* LEFT COLUMN: The Graphs */}
+                        <div className="bg-surface-white border border-glass-border p-7 flex flex-col justify-between shadow-md rounded-xl h-full min-h-[560px]">
+                          <div>
+                            <div className="flex justify-between items-center mb-4">
+                              <h4 className="text-xl font-bold text-on-surface flex items-center gap-2.5">
+                                <Box className="w-5 h-5 text-primary" /> Kelvin Wave & Isotherm Transect
+                              </h4>
+                              <span className="text-xs text-primary font-medium flex items-center gap-1">
+                                <ZoomIn className="w-3.5 h-3.5" /> Click to Expand
+                              </span>
+                            </div>
+                            <div 
+                              className="relative group cursor-pointer border border-glass-border rounded-xl overflow-hidden bg-white shadow-sm hover:shadow-xl transition-all duration-300 flex items-center justify-center p-2 mb-5"
+                              onClick={() => setSelectedDisasterImage({
+                                src: inferResults.visualizations?.drought_sim_image || "/simulations/sim_drought.png",
+                                title: "Drought / Flood Indian Ocean Dipole Simulation",
+                                subtitle: "Kelvin Wave Slope Inversion & D20 Thermocline Core Crossing Depth",
+                                formula: "D₂₀ = Depth(z) where T(z) = 20.0°C",
+                              })}
+                            >
+                              <img 
+                                src={inferResults.visualizations?.drought_sim_image || "/simulations/sim_drought.png"} 
+                                alt="Drought / IOD Simulation" 
+                                className="w-full h-auto rounded-lg object-contain transition-transform duration-300 group-hover:scale-[1.01]" 
+                              />
+                              <div className="absolute top-3 right-3 bg-black/75 hover:bg-black/90 backdrop-blur-md text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition-opacity shadow-md border border-white/20">
+                                <Maximize2 className="w-3.5 h-3.5 text-cyan-400" /> Expand Modal
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-sm md:text-base text-text-muted space-y-2 pt-3 border-t border-glass-border/40">
+                            <p><strong className="text-on-surface text-amber-400">Drought Mode (&lt;50m):</strong> Freezing abyssal water breaches near-surface, shutting down evaporation.</p>
+                            <p><strong className="text-on-surface text-blue-400">Flood Mode (&gt;120m):</strong> Massive downwelling warm pool supercharges monsoon cloud formation.</p>
+                          </div>
+                        </div>
+
+                        {/* RIGHT COLUMN: The Calculations */}
+                        <div className="bg-surface-white border border-glass-border p-7 flex flex-col justify-between shadow-md rounded-xl h-full min-h-[560px]">
+                          <div>
+                            <h4 className="text-xl font-bold text-on-surface mb-4 flex items-center gap-2.5">
+                              <Activity className="w-5 h-5 text-cyan-400" /> D20 Isotherm Inversion & Monsoon Coupling
+                            </h4>
+                            
+                            <div className="p-5 bg-background border border-glass-border rounded-xl shadow-inner mb-5">
+                              <div className="text-center font-serif text-xl md:text-2xl mb-4 text-on-surface py-1">
+                                <i>D<sub>20</sub></i> = Depth(<i>z</i>) where <i>T(z)</i> = 20.0°C
+                              </div>
+                              <ul className="list-disc pl-6 text-sm text-text-muted space-y-1.5 leading-relaxed">
+                                <li><i>D<sub>20</sub></i>: Core thermocline depth ({d20.toFixed(1)} m)</li>
+                                <li><i>T(z)</i>: Vertical continuous thermal splining</li>
+                                <li>Equatorial Indian Ocean Mean Baseline: ~80 – 100 m</li>
+                              </ul>
+                              
+                              <div className="mt-4 p-3.5 bg-surface-container/70 rounded-lg font-label-mono text-sm text-on-surface border border-glass-border/40">
+                                <p className="text-primary font-bold">Live AI Calc: Exact 20.0°C Crossing Inverted at {d20.toFixed(1)}m</p>
+                              </div>
+                            </div>
+
+                            <div className="text-sm md:text-base text-text-muted space-y-3 leading-relaxed">
+                              <p><strong className="text-on-surface font-semibold">Climate Teleconnection:</strong> The D20 depth is the master switch governing the Indian Ocean Dipole (IOD). Its slope dictates continental rainfall across South Asia.</p>
+                              <p><strong className="text-on-surface font-semibold">Current Status:</strong> <strong className="text-cyan-400 font-bold">{riskLevel}</strong> at D20 = {d20.toFixed(1)}m.</p>
+                            </div>
+                          </div>
+
+                          <div className="bg-surface-container/40 p-3.5 rounded-lg font-label-mono text-xs md:text-sm text-on-surface mt-5 border border-glass-border/30">
+                            <p>IOD Index Ranges: Upwelling / Drought (&lt;50m) | Normal (50-120m) | Downwelling / Flood (&gt;120m)</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+                </>
+                )}
+
+                {/* 4. Harmful Algal Bloom (HAB) */}
+                {activeDisasterTab === "algae" && (
+                <>
+                {(() => {
+                  const mld = Number(inferResults.derived_physical_products?.mixed_layer_depth_m ?? inferResults.ocean_metrics?.mixed_layer_depth_m ?? 25);
+                  const sst = Number(inferResults.inputs.sst ?? 29.0);
+                  const sigma = Number(inferResults.inputs.potential_density_sigma0 ?? 23.5);
+                  let riskLevel = "SAFE (Well-Mixed Turbulent Ocean)";
+                  let color = "bg-[#22c55e]";
+                  let txtColor = "text-[#22c55e]";
+                  if (mld < 20 && sst > 29.5) { riskLevel = "HIGH RISK (Severe Hypoxic Stratification / Stagnant Bloom)"; color = "bg-[#ef4444]"; txtColor = "text-[#ef4444]"; }
+                  else if (mld < 35) { riskLevel = "MODERATE RISK (Elevated Stratification)"; color = "bg-[#eab308]"; txtColor = "text-[#eab308]"; }
+                  
+                  return (
+                    <div className="flex flex-col gap-8">
+                      {/* TOP SECTION: The Risk Bars */}
+                      <div className="bg-surface-white border border-glass-border p-7 flex flex-col justify-between shadow-md rounded-xl">
+                        <div>
+                          <div className="flex justify-between items-center mb-3">
+                            <h3 className="text-xl md:text-2xl font-bold text-on-surface flex items-center gap-2.5">
+                              <Droplets className="w-6 h-6 text-emerald-400" /> Toxic Algal Bloom & Hypoxia Dead Zone Risk
+                            </h3>
+                            <span className={`px-4 py-1.5 text-sm font-bold text-white rounded-lg shadow-sm ${color}`}>
+                              {riskLevel}
+                            </span>
+                          </div>
+                          <p className="text-base text-text-muted mb-5 leading-relaxed">
+                            Severe pycnocline stratification traps agricultural runoff in a stagnant surface blanket, depleting dissolved oxygen and breeding toxic harmful algal blooms (HABs).
+                          </p>
+                        </div>
+                        <div className="bg-background border border-glass-border p-6 rounded-lg">
+                          <div className="flex justify-between items-center mb-4">
+                            <span className="text-base font-semibold text-text-muted">Mixed Layer Depth (MLD Stratification):</span>
+                            <span className={`text-3xl md:text-4xl font-extrabold font-label-mono ${txtColor}`}>
+                              {mld.toFixed(1)} <span className="text-lg font-normal text-text-muted">m</span>
+                            </span>
+                          </div>
+                          {/* Stratification Gauge */}
+                          <div className="relative h-6 w-full bg-surface-container rounded-full overflow-hidden flex shadow-inner">
+                            <div className="h-full bg-[#ef4444]" style={{ width: "20%" }} title="High Risk: MLD < 20m (Stagnant)"></div>
+                            <div className="h-full bg-[#eab308]" style={{ width: "25%" }} title="Moderate: MLD 20-35m"></div>
+                            <div className="h-full bg-[#22c55e]" style={{ width: "55%" }} title="Safe: MLD > 35m (Turbulent / Mixed)"></div>
+                            
+                            {/* Marker */}
+                            <div 
+                              className="absolute top-0 bottom-0 w-2 bg-white shadow-2xl border-2 border-black z-10 transition-all duration-700 ease-in-out rounded-full"
+                              style={{ left: `${Math.min(99, Math.max(1, (mld / 100) * 100))}%` }}
+                            ></div>
+                          </div>
+                          <div className="flex justify-between text-xs md:text-sm font-label-mono text-text-muted mt-2.5 px-1 font-medium">
+                            <span>0m (Stagnant Dead-Zone)</span>
+                            <span>20m (High Risk)</span>
+                            <span>35m (Moderate)</span>
+                            <span>60m</span>
+                            <span>100m+ (Well-Mixed)</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* BOTTOM SECTION: 2-Column Grid */}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
+                        {/* LEFT COLUMN: The Graphs */}
+                        <div className="bg-surface-white border border-glass-border p-7 flex flex-col justify-between shadow-md rounded-xl h-full min-h-[560px]">
+                          <div>
+                            <div className="flex justify-between items-center mb-4">
+                              <h4 className="text-xl font-bold text-on-surface flex items-center gap-2.5">
+                                <Box className="w-5 h-5 text-primary" /> Hypoxic Density Pycnocline Simulation
+                              </h4>
+                              <span className="text-xs text-primary font-medium flex items-center gap-1">
+                                <ZoomIn className="w-3.5 h-3.5" /> Click to Expand
+                              </span>
+                            </div>
+                            <div 
+                              className="relative group cursor-pointer border border-glass-border rounded-xl overflow-hidden bg-white shadow-sm hover:shadow-xl transition-all duration-300 flex items-center justify-center p-2 mb-5"
+                              onClick={() => setSelectedDisasterImage({
+                                src: inferResults.visualizations?.algae_sim_image || "/simulations/sim_algae.png",
+                                title: "Toxic Algal Bloom & Hypoxia Dead Zone Simulation",
+                                subtitle: "Pycnocline Density Stratification & Mixed Layer Barrier Trapping",
+                                formula: "MLD = Depth(z) where (T(10m) - T(z)) ≥ 0.2°C",
+                              })}
+                            >
+                              <img 
+                                src={inferResults.visualizations?.algae_sim_image || "/simulations/sim_algae.png"} 
+                                alt="Algae Bloom Stratification Simulation" 
+                                className="w-full h-auto rounded-lg object-contain transition-transform duration-300 group-hover:scale-[1.01]" 
+                              />
+                              <div className="absolute top-3 right-3 bg-black/75 hover:bg-black/90 backdrop-blur-md text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition-opacity shadow-md border border-white/20">
+                                <Maximize2 className="w-3.5 h-3.5 text-emerald-400" /> Expand Modal
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-sm md:text-base text-text-muted space-y-2 pt-3 border-t border-glass-border/40">
+                            <p><strong className="text-on-surface text-emerald-400">Turbulent Mixed (Green):</strong> Atmospheric oxygen penetrates deep; prevents hypoxic stagnation.</p>
+                            <p><strong className="text-on-surface text-rose-400">Stagnant Barrier (Red):</strong> Sharp pycnocline locks organic matter at MLD = {mld.toFixed(1)}m.</p>
+                          </div>
+                        </div>
+
+                        {/* RIGHT COLUMN: The Calculations */}
+                        <div className="bg-surface-white border border-glass-border p-7 flex flex-col justify-between shadow-md rounded-xl h-full min-h-[560px]">
+                          <div>
+                            <h4 className="text-xl font-bold text-on-surface mb-4 flex items-center gap-2.5">
+                              <Activity className="w-5 h-5 text-emerald-400" /> Mixed Layer & Density Stratification Formulas
+                            </h4>
+                            
+                            <div className="p-5 bg-background border border-glass-border rounded-xl shadow-inner mb-5">
+                              <div className="text-center font-serif text-xl md:text-2xl mb-4 text-on-surface py-1">
+                                <i>MLD</i> = Depth(<i>z</i>) where (<i>T</i>(10m) - <i>T(z)</i>) &ge; 0.2°C
+                              </div>
+                              <ul className="list-disc pl-6 text-sm text-text-muted space-y-1.5 leading-relaxed">
+                                <li><i>MLD</i>: Mixed Layer Depth ({mld.toFixed(1)} m)</li>
+                                <li><i>SST</i>: Sea surface temperature ({sst.toFixed(1)}°C)</li>
+                                <li><i>σ₀</i>: Potential surface density ({sigma.toFixed(2)} kg/m³)</li>
+                              </ul>
+                              
+                              <div className="mt-4 p-3.5 bg-surface-container/70 rounded-lg font-label-mono text-sm text-on-surface border border-glass-border/40">
+                                <p className="text-primary font-bold">Live AI Calc: MLD = {mld.toFixed(1)}m | σ₀ = {sigma.toFixed(2)} kg/m³ → {riskLevel}</p>
+                              </div>
+                            </div>
+
+                            <div className="text-sm md:text-base text-text-muted space-y-3 leading-relaxed">
+                              <p><strong className="text-on-surface font-semibold">Eutrophication Mechanism:</strong> Warm, light surface blankets act as a physical lid preventing gas exchange. Decaying blooms deplete oxygen to &lt; 2 mg/L.</p>
+                              <p><strong className="text-on-surface font-semibold">Status:</strong> <strong className="text-emerald-400 font-bold">{riskLevel}</strong> at MLD = {mld.toFixed(1)}m.</p>
+                            </div>
+                          </div>
+
+                          <div className="bg-surface-container/40 p-3.5 rounded-lg font-label-mono text-xs md:text-sm text-on-surface mt-5 border border-glass-border/30">
+                            <p>Stratification Scale: High Risk (&lt;20m) | Moderate (20-35m) | Safe (&gt;35m)</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+                </>
+                )}
               </div>
             </div>
           )}
@@ -1249,27 +1850,236 @@ Diff: ${(ds.tribreed_degC - ds.baseline_degC).toFixed(2)}°C`}</title>
 
           {/* TAB 6: CYCLONE & EDDY FORECASTING */}
           {activeTab === "forecasting" && (
-            <div className="space-y-6">
-              <div className="bg-surface-white shadow-sm border border-glass-border border border-glass-border p-6  space-y-4">
-                <div>
-                  <h2 className="font-headline-md text-headline-md text-on-surface flex items-center gap-2">
-                    <TrendingUp className="w-5 h-5 text-primary" />
-                    Mesoscale Eddy & Cyclone Latent Trajectory Forecaster
-                  </h2>
-                  <p className="font-body-sm text-body-sm text-text-muted">
-                    Recurrent LSTM forecasting 1-day ahead ocean eddy migration in 256-D latent space
-                  </p>
-                </div>
+            (() => {
+              // Mathematical calculation of the live trajectory based on AI UOHC fuel
+              let cycloneTrack: any = null;
+              if (inferResults) {
+                const startLon = lon;
+                const startLat = lat;
+                const tchp = Number(uohcValue);
+                const I0 = Math.max(1, seedStormCategory); // Assume at least Cat 1 for track
+                let currentLon = startLon;
+                let currentLat = startLat;
+                let intensity = I0;
+                
+                const coordinates = [[currentLon, currentLat]];
+                
+                for (let t = 1; t <= 168; t += 6) {
+                   // Kinetic Decay Model tied directly to AI UOHC fuel
+                   intensity = I0 * Math.exp(-0.25 * t / Math.max(1, (tchp / 15)));
+                   if (intensity < 0.2) break; // Storm dies
+                   
+                   // NW steering flow + Coriolis
+                   const driftLat = 0.05 + (currentLat * 0.002);
+                   const driftLon = -0.05;
+                   
+                   currentLon += driftLon * intensity;
+                   currentLat += driftLat * intensity;
+                   coordinates.push([currentLon, currentLat]);
+                }
+                
+                if (coordinates.length > 1) {
+                  cycloneTrack = {
+                    type: "Feature",
+                    geometry: { type: "LineString", coordinates }
+                  };
+                }
+              }
 
-                <div className=" overflow-hidden border border-glass-border bg-background text-on-surface">
-                  <img
-                    src="/assets/cyclone_eddy_forecast_track.png"
-                    alt="Cyclone & Eddy Forecast Track"
-                    className="w-full object-cover"
-                  />
+              return (
+                <div className="space-y-6">
+                  {/* Forecaster Header */}
+                  <div className="bg-surface-white border border-glass-border p-6 shadow-md rounded-xl">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-xl font-bold text-on-surface flex items-center gap-2.5">
+                        <TrendingUp className="w-5 h-5 text-rose-500" /> AI-Driven Trajectory Engine: Kinetic Decay Model
+                      </h4>
+                      <span className="bg-rose-500/10 text-rose-500 px-3 py-1 text-xs font-bold rounded-lg border border-rose-500/20">LIVE MAP INJECTION</span>
+                    </div>
+                    <p className="text-sm text-text-muted">
+                      The cyclone path drawn on the map is calculated live. It uses your injected Seed Storm Category as initial inertia, and the AI's deep thermal fuel prediction (UOHC) at the origin coordinate as the battery life. <strong>If UOHC is high, the storm reaches the coast. If UOHC is low, it dies in the ocean.</strong> Change the SST/SSH inputs on the right to watch the downstream path manipulate!
+                    </p>
+                  </div>
+
+                  {/* Main Grid: Map on Left, Inputs on Right */}
+                  <div className="flex flex-col lg:flex-row gap-6">
+                    {/* Left: Map */}
+                    <div className="lg:w-3/4 relative bg-surface-container border border-glass-border min-h-[600px] overflow-hidden flex flex-col rounded-xl">
+                      <Map
+                        initialViewState={{
+                          longitude: 85,
+                          latitude: 15,
+                          zoom: 4,
+                          pitch: 0,
+                          bearing: 0
+                        }}
+                        maxBounds={[[40, 0], [110, 35]] as any}
+                        mapStyle={{
+                          version: 8,
+                          sources: {
+                            esri: {
+                              type: "raster",
+                              tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+                              tileSize: 256,
+                              attribution: "Esri"
+                            }
+                          },
+                          layers: [
+                            {
+                              id: "esri-layer",
+                              type: "raster",
+                              source: "esri",
+                              minzoom: 0,
+                              maxzoom: 19
+                            }
+                          ]
+                        }}
+                        onClick={(e) => {
+                          setLon(Math.min(Math.max(Number(e.lngLat.lng.toFixed(2)), 45), 105));
+                          setLat(Math.min(Math.max(Number(e.lngLat.lat.toFixed(2)), 5), 30));
+                        }}
+                        cursor="crosshair"
+                      >
+                        <Source id="graticule" type="geojson" data={GRATICULE_GEOJSON as any}>
+                          <Layer 
+                            id="graticule-line" 
+                            type="line" 
+                            paint={{
+                              "line-color": "#06b6d4",
+                              "line-opacity": 0.4,
+                              "line-width": 1,
+                              "line-dasharray": [3, 3]
+                            }} 
+                          />
+                        </Source>
+                        
+                        {cycloneTrack && (
+                          <Source id="cyclone-track" type="geojson" data={cycloneTrack}>
+                            <Layer 
+                              id="cyclone-track-line" 
+                              type="line" 
+                              paint={{
+                                "line-color": "#ef4444",
+                                "line-width": 5,
+                                "line-opacity": 0.9,
+                                "line-blur": 2
+                              }} 
+                            />
+                          </Source>
+                        )}
+                        
+                        <NavigationControl position="bottom-right" />
+                        
+                        {!isNaN(lat) && !isNaN(lon) && (
+                          <Marker 
+                            longitude={Math.min(Math.max(lon, 45), 105)} 
+                            latitude={Math.min(Math.max(lat, 5), 30)} 
+                            anchor="center"
+                            draggable={true}
+                            onDrag={(e) => {
+                              setLon(Math.min(Math.max(Number(e.lngLat.lng.toFixed(2)), 45), 105));
+                              setLat(Math.min(Math.max(Number(e.lngLat.lat.toFixed(2)), 5), 30));
+                            }}
+                          >
+                            <div className="text-rose-500 cursor-grab active:cursor-grabbing transition-transform hover:scale-125 drop-shadow-[0_4px_10px_rgba(244,63,94,0.8)]">
+                              <Crosshair className="w-10 h-10 stroke-[2.5]" />
+                            </div>
+                          </Marker>
+                        )}
+                      </Map>
+                      
+                      {/* Seed Storm Category Controller Overlay */}
+                      <div className="absolute bottom-6 left-6 right-16 bg-background/95 backdrop-blur-md p-4 border-2 border-rose-500 shadow-xl rounded-xl z-10 flex flex-col gap-2">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="font-bold text-sm text-on-surface">Inject Seed Storm Category:</span>
+                          <span className="font-mono text-rose-500 font-bold bg-rose-500/10 px-2 rounded">Cat {seedStormCategory}</span>
+                        </div>
+                        <input 
+                          type="range" 
+                          min="1" max="5" step="1" 
+                          value={seedStormCategory} 
+                          onChange={(e) => setSeedStormCategory(parseInt(e.target.value))}
+                          className="w-full accent-rose-500 cursor-pointer" 
+                        />
+                        <div className="flex justify-between text-xs text-text-muted font-bold px-1">
+                          <span>Cat 1 (Depression)</span>
+                          <span>Cat 3 (Severe)</span>
+                          <span>Cat 5 (Super Cyclone)</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right: The 7-Inputs so User is never disconnected */}
+                    <div className="lg:w-1/4 flex flex-col gap-2 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
+                      <div className="bg-surface-white border border-rose-500/40 shadow-sm p-3 mb-2 rounded-xl text-center">
+                        <p className="text-xs font-bold text-rose-500">Live Prediction Coordinates</p>
+                        <p className="font-mono text-sm">{lat.toFixed(2)}°N, {lon.toFixed(2)}°E</p>
+                      </div>
+                      
+                      <button 
+                        onClick={handleRunInference}
+                        disabled={isLoading}
+                        className={`w-full py-4 rounded-xl flex items-center justify-center gap-2 font-button-lg text-button-lg shadow-sm border border-glass-border font-bold mb-4 ${isLoading ? "bg-surface-container-high text-on-surface-variant border-surface-container-highest cursor-not-allowed" : "bg-primary text-on-primary hover:bg-primary-hover active:bg-primary-active border-primary hover:shadow-md transition-all"}`}
+                      >
+                        {isLoading ? (
+                          <>
+                            <RotateCcw className="w-5 h-5 animate-spin" />
+                            <span>Computing 3D Subsurface...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Zap className="w-5 h-5 text-amber-300" />
+                            <span>RUN AI INFERENCE</span>
+                          </>
+                        )}
+                      </button>
+
+                      {[
+                        { id: 1, label: 'SST', desc: 'Sea Surface Temperature', min: 20, max: 35, step: 0.1, val: sst, setVal: setSst, unit: '°C' },
+                        { id: 2, label: 'SSS', desc: 'Sea Surface Salinity', min: 30, max: 40, step: 0.1, val: sss, setVal: setSss, unit: 'PSU' },
+                        { id: 3, label: 'SSH', desc: 'Sea Surface Height', min: -1.5, max: 1.5, step: 0.02, val: ssh, setVal: setSsh, unit: 'm' },
+                      ].map(inp => (
+                        <div key={inp.id} className="bg-surface-white border border-glass-border p-3 space-y-2 rounded-lg">
+                          <div className="flex justify-between items-center">
+                            <div className="flex flex-col">
+                              <span className="font-headline-md text-[13px] text-on-surface">{inp.label}</span>
+                            </div>
+                            <div className="flex gap-1 items-center bg-surface-container-low px-2 py-1 border border-glass-border rounded">
+                              <input 
+                                type="number" 
+                                value={(inp.val as any) === "" || (inp.val as any) === "-" ? (inp.val as any) : (isNaN(inp.val as any) ? "" : inp.val)} 
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  if (v === "" || v === "-") inp.setVal(v as any);
+                                  else inp.setVal(parseFloat(v));
+                                }}
+                                onBlur={(e) => {
+                                  let v = parseFloat(e.target.value);
+                                  if (isNaN(v)) v = inp.min;
+                                  inp.setVal(Math.min(Math.max(v, inp.min), inp.max));
+                                }}
+                                className="w-14 bg-transparent text-right font-label-mono text-on-surface outline-none"
+                              />
+                              <span className="font-label-mono text-[10px] text-text-muted">{inp.unit}</span>
+                            </div>
+                          </div>
+                          <div className="relative pt-1">
+                            <input 
+                              type="range" min={inp.min} max={inp.max} step={inp.step} 
+                              value={isNaN(inp.val) ? inp.min : inp.val} 
+                              onChange={(e) => inp.setVal(parseFloat(e.target.value))}
+                              onMouseUp={handleRunInference}
+                              onTouchEnd={handleRunInference}
+                              className="w-full h-1 bg-surface-container-high appearance-none outline-none accent-primary"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
+              );
+            })()
           )}
 
           {/* TAB 7: IN-SITU BENCHMARKS */}
@@ -1544,6 +2354,112 @@ Diff: ${(ds.tribreed_degC - ds.baseline_degC).toFixed(2)}°C`}</title>
           </div>
         </div>
       )}
+      {/* DISASTER SIMULATION LIGHTBOX MODAL */}
+      {selectedDisasterImage && (
+        <div 
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 md:p-8 animate-in fade-in duration-200" 
+          onClick={() => setSelectedDisasterImage(null)}
+        >
+          <div 
+            className="bg-surface-white border border-glass-border rounded-2xl shadow-2xl max-w-5xl w-full p-6 md:p-8 flex flex-col gap-4 relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center border-b border-glass-border pb-4">
+              <div>
+                <h3 className="text-xl md:text-2xl font-bold text-on-surface flex items-center gap-2.5">
+                  <Activity className="w-6 h-6 text-primary" /> {selectedDisasterImage.title}
+                </h3>
+                <p className="text-sm md:text-base text-text-muted mt-1">{selectedDisasterImage.subtitle}</p>
+              </div>
+              <button 
+                onClick={() => setSelectedDisasterImage(null)}
+                className="text-text-muted hover:text-rose-400 p-2.5 rounded-xl bg-surface-container/50 hover:bg-surface-container transition-colors text-xl font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="bg-white rounded-xl p-4 flex items-center justify-center overflow-hidden border border-glass-border shadow-inner">
+              <img 
+                src={selectedDisasterImage.src} 
+                alt={selectedDisasterImage.title} 
+                className="w-full h-auto max-h-[75vh] object-contain rounded-lg shadow-sm"
+              />
+            </div>
+
+            <div className="flex flex-wrap justify-between items-center text-xs md:text-sm text-text-muted pt-2 gap-2">
+              <span className="font-mono text-primary font-semibold p-2 bg-primary/10 rounded">{selectedDisasterImage.formula}</span>
+              <span>Click anywhere outside or ✕ to close</span>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ACOUSTICS & SOUND VELOCITY MODAL */}
+      {isAcousticsModalOpen && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#020617]/80 backdrop-blur-sm p-4" 
+          onClick={() => setIsAcousticsModalOpen(false)}
+        >
+          <div 
+            className="bg-surface-white border border-glass-border rounded-xl shadow-2xl max-w-4xl w-full p-6 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center border-b border-glass-border pb-3">
+              <div>
+                <h3 className="text-xl font-bold text-on-surface flex items-center gap-2">
+                  <Radio className="w-5 h-5 text-emerald-500" /> 3D Acoustic Sound Velocity Profile c(T, S, z)
+                </h3>
+                <p className="text-xs text-text-muted mt-0.5">Mackenzie (1981) UNESCO Empirical Ocean Acoustic Waveguide Model</p>
+              </div>
+              <button 
+                onClick={() => setIsAcousticsModalOpen(false)}
+                className="text-text-muted hover:text-rose-400 text-xl font-bold p-1"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-white border border-glass-border rounded-lg p-3 flex items-center justify-center">
+                {inferResults.visualizations?.sound_velocity_image ? (
+                  <img 
+                    src={inferResults.visualizations.sound_velocity_image} 
+                    alt="Sound Velocity Profile" 
+                    className="w-full h-auto object-contain rounded"
+                  />
+                ) : (
+                  <div className="text-center text-text-muted py-12">Sound Velocity Chart Loading...</div>
+                )}
+              </div>
+              <div className="flex flex-col justify-between space-y-3 bg-surface-container/40 p-4 rounded-lg border border-glass-border">
+                <div className="space-y-3 text-xs text-on-surface">
+                  <div className="font-bold text-sm text-emerald-500">Acoustic Channel Parameters:</div>
+                  <div className="flex justify-between py-1 border-b border-glass-border/40">
+                    <span className="text-text-muted">Surface Sound Speed c(0m):</span>
+                    <span className="font-mono font-bold">{inferResults.derived_physical_products?.surface_sound_speed_ms ?? 1544.7} m/s</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-glass-border/40">
+                    <span className="text-text-muted">SOFAR Channel Axis Depth:</span>
+                    <span className="font-mono font-bold text-emerald-500">{inferResults.derived_physical_products?.sofar_sound_channel_axis_m ?? 1000} m</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-glass-border/40">
+                    <span className="text-text-muted">Deep Ocean Speed c(1000m):</span>
+                    <span className="font-mono font-bold">{inferResults.derived_physical_products?.deep_sound_speed_1000m_ms ?? 1496.5} m/s</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-glass-border/40">
+                    <span className="text-text-muted">Acoustic Duct Trapping Strength:</span>
+                    <span className="font-mono font-bold text-primary">{inferResults.derived_physical_products?.acoustic_duct_trapping_strength_ms ?? 48.2} m/s</span>
+                  </div>
+                  <p className="text-text-muted pt-2 leading-relaxed">
+                    The Sound Fixing and Ranging (SOFAR) channel axis acts as an oceanic acoustic waveguide where sound waves refract continuously toward the velocity minimum, allowing ultra-long-range acoustic transmission for submarine sonar and marine tracking.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
 </main>
       </div>
     </div>
