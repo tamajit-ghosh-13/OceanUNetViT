@@ -256,21 +256,21 @@ export default function OceanEmbedDashboard() {
   }, []);
 
   const depthImageMap: Record<number, string> = {
-    0: "/assets/snapshot_tribreed_mixed_5m.png",
-    5: "/assets/snapshot_tribreed_mixed_5m.png",
-    10: "/assets/snapshot_tribreed_mixed_5m.png",
-    20: "/assets/snapshot_tribreed_mixed_5m.png",
-    30: "/assets/snapshot_tribreed_thermocline_100m.png",
-    50: "/assets/snapshot_tribreed_thermocline_100m.png",
-    75: "/assets/snapshot_tribreed_thermocline_100m.png",
-    100: "/assets/snapshot_tribreed_thermocline_100m.png",
-    125: "/assets/snapshot_tribreed_thermocline_100m.png",
-    150: "/assets/snapshot_tribreed_thermocline_100m.png",
-    200: "/assets/snapshot_tribreed_thermocline_100m.png",
-    300: "/assets/snapshot_tribreed_deep_700m.png",
-    500: "/assets/snapshot_tribreed_deep_700m.png",
-    700: "/assets/snapshot_tribreed_deep_700m.png",
-    1000: "/assets/snapshot_tribreed_deep_700m.png",
+    0: "/assets/snapshot_duo_elite_0m.png",
+    5: "/assets/snapshot_duo_elite_5m.png",
+    10: "/assets/snapshot_duo_elite_10m.png",
+    20: "/assets/snapshot_duo_elite_20m.png",
+    30: "/assets/snapshot_duo_elite_30m.png",
+    50: "/assets/snapshot_duo_elite_50m.png",
+    75: "/assets/snapshot_duo_elite_75m.png",
+    100: "/assets/snapshot_duo_elite_100m.png",
+    125: "/assets/snapshot_duo_elite_125m.png",
+    150: "/assets/snapshot_duo_elite_150m.png",
+    200: "/assets/snapshot_duo_elite_200m.png",
+    300: "/assets/snapshot_duo_elite_300m.png",
+    500: "/assets/snapshot_duo_elite_500m.png",
+    700: "/assets/snapshot_duo_elite_700m.png",
+    1000: "/assets/snapshot_duo_elite_1000m.png",
   };
 
   const uohcValue = inferResults?.ocean_metrics?.ocean_heat_content_kj_cm2 ?? 50;
@@ -781,7 +781,6 @@ export default function OceanEmbedDashboard() {
                           <tr>
                             <th className="p-2.5">Depth</th>
                             <th className="p-2.5 text-primary font-bold bg-primary-container text-on-primary-container/40">Predicted Temperature</th>
-                            <th className="p-2.5 text-emerald-500 font-bold">Sound Speed c(z)</th>
                             <th className="p-2.5">±2σ Band</th>
                           </tr>
                         </thead>
@@ -791,9 +790,6 @@ export default function OceanEmbedDashboard() {
                               <td className="p-2.5 font-bold text-on-surface-variant">{row.depth_m} m</td>
                               <td className="p-2.5 font-extrabold text-primary bg-primary-container text-on-primary-container/30 text-body-lg">
                                 {(row.duo_elite_degC ?? row.tribreed_degC).toFixed(2)}°C
-                              </td>
-                              <td className="p-2.5 font-bold text-emerald-500">
-                                {row.sound_speed_ms ? `${row.sound_speed_ms.toFixed(1)} m/s` : "--"}
                               </td>
                               <td className="p-2.5 text-text-muted">±{row.confidence_std}°C</td>
                             </tr>
@@ -1783,7 +1779,7 @@ Diff: ${(ds.tribreed_degC - ds.baseline_degC).toFixed(2)}°C`}</title>
                     </p>
                   </div>
                   <span className="text-body-sm bg-secondary/10 text-secondary border border-secondary-fixed-dim px-3 py-1  font-label-mono text-label-mono">
-                    5 HIGH-VALUE TARGETS PINPOINTED
+                    7 HIGH-VALUE TARGETS PINPOINTED
                   </span>
                 </div>
 
@@ -1853,37 +1849,57 @@ Diff: ${(ds.tribreed_degC - ds.baseline_degC).toFixed(2)}°C`}</title>
             (() => {
               // Mathematical calculation of the live trajectory based on AI UOHC fuel
               let cycloneTrack: any = null;
-              if (inferResults) {
-                const startLon = lon;
-                const startLat = lat;
-                const tchp = Number(uohcValue);
-                const I0 = Math.max(1, seedStormCategory); // Assume at least Cat 1 for track
-                let currentLon = startLon;
-                let currentLat = startLat;
-                let intensity = I0;
+              const waypoints: any[] = [];
+              
+              const startLon = isNaN(lon) ? 88.0 : lon;
+              const startLat = isNaN(lat) ? 14.0 : lat;
+              const tchp = Number(inferResults?.derived_physical_products?.tchp_kj_cm2 ?? inferResults?.ocean_metrics?.ocean_heat_content_kj_cm2 ?? uohcValue ?? 65);
+              const I0 = Math.max(1, seedStormCategory);
+              
+              let currentLon = startLon;
+              let currentLat = startLat;
+              let intensity = I0;
+              
+              const coordinates: [number, number][] = [[currentLon, currentLat]];
+              
+              // 7-day timestep simulation (120 hours in 6-hour increments)
+              for (let t = 6; t <= 120; t += 6) {
+                // Realistic cyclone translation speed ~ 15-20 km/h (~0.6° to 0.9° per 6h)
+                const speedDeg = 0.65 + 0.15 * (intensity / 5.0);
+                const decayRate = 0.18 / Math.max(1.0, (tchp / 25.0));
+                intensity = I0 * Math.exp(-decayRate * (t / 24.0));
+                if (intensity < 0.3) break;
                 
-                const coordinates = [[currentLon, currentLat]];
+                // Steering towards northwest with Coriolis deflection
+                const driftLon = -speedDeg * 0.707 * (intensity / I0 + 0.3);
+                const driftLat = speedDeg * 0.707 * (intensity / I0 + 0.3);
                 
-                for (let t = 1; t <= 168; t += 6) {
-                   // Kinetic Decay Model tied directly to AI UOHC fuel
-                   intensity = I0 * Math.exp(-0.25 * t / Math.max(1, (tchp / 15)));
-                   if (intensity < 0.2) break; // Storm dies
-                   
-                   // NW steering flow + Coriolis
-                   const driftLat = 0.05 + (currentLat * 0.002);
-                   const driftLon = -0.05;
-                   
-                   currentLon += driftLon * intensity;
-                   currentLat += driftLat * intensity;
-                   coordinates.push([currentLon, currentLat]);
+                currentLon += driftLon;
+                currentLat += driftLat;
+                
+                // Bound to North Indian Ocean bounding box
+                if (currentLat > 28.0 || currentLon < 50.0 || currentLon > 100.0) {
+                  coordinates.push([currentLon, currentLat]);
+                  break;
                 }
                 
-                if (coordinates.length > 1) {
-                  cycloneTrack = {
-                    type: "Feature",
-                    geometry: { type: "LineString", coordinates }
-                  };
+                coordinates.push([currentLon, currentLat]);
+                
+                if (t % 24 === 0) {
+                  waypoints.push({
+                    hour: t,
+                    lon: currentLon,
+                    lat: currentLat,
+                    cat: Math.min(5, Math.max(1, Math.round(intensity))),
+                  });
                 }
+              }
+              
+              if (coordinates.length > 1) {
+                cycloneTrack = {
+                  type: "Feature",
+                  geometry: { type: "LineString", coordinates }
+                };
               }
 
               return (
@@ -1897,7 +1913,7 @@ Diff: ${(ds.tribreed_degC - ds.baseline_degC).toFixed(2)}°C`}</title>
                       <span className="bg-rose-500/10 text-rose-500 px-3 py-1 text-xs font-bold rounded-lg border border-rose-500/20">LIVE MAP INJECTION</span>
                     </div>
                     <p className="text-sm text-text-muted">
-                      The cyclone path drawn on the map is calculated live. It uses your injected Seed Storm Category as initial inertia, and the AI's deep thermal fuel prediction (UOHC) at the origin coordinate as the battery life. <strong>If UOHC is high, the storm reaches the coast. If UOHC is low, it dies in the ocean.</strong> Change the SST/SSH inputs on the right to watch the downstream path manipulate!
+                      The cyclone path drawn on the map is calculated live. It uses your injected Seed Storm Category as initial inertia, and the AI's deep thermal fuel prediction (UOHC: {tchp.toFixed(1)} kJ/cm²) as the energy reservoir. <strong>If UOHC is high, the storm sustains all the way to the coastline. If UOHC is low, it dies in the ocean.</strong>
                     </p>
                   </div>
 
@@ -1907,9 +1923,9 @@ Diff: ${(ds.tribreed_degC - ds.baseline_degC).toFixed(2)}°C`}</title>
                     <div className="lg:w-3/4 relative bg-surface-container border border-glass-border min-h-[600px] overflow-hidden flex flex-col rounded-xl">
                       <Map
                         initialViewState={{
-                          longitude: 85,
-                          latitude: 15,
-                          zoom: 4,
+                          longitude: isNaN(lon) ? 85 : lon,
+                          latitude: isNaN(lat) ? 15 : lat,
+                          zoom: 4.2,
                           pitch: 0,
                           bearing: 0
                         }}
@@ -1955,19 +1971,42 @@ Diff: ${(ds.tribreed_degC - ds.baseline_degC).toFixed(2)}°C`}</title>
                         
                         {cycloneTrack && (
                           <Source id="cyclone-track" type="geojson" data={cycloneTrack}>
+                            {/* Outer Glowing Halo */}
+                            <Layer 
+                              id="cyclone-track-glow" 
+                              type="line" 
+                              paint={{
+                                "line-color": "#f43f5e",
+                                "line-width": 10,
+                                "line-opacity": 0.5,
+                                "line-blur": 3
+                              }} 
+                            />
+                            {/* Core Bright Vector Line */}
                             <Layer 
                               id="cyclone-track-line" 
                               type="line" 
                               paint={{
-                                "line-color": "#ef4444",
-                                "line-width": 5,
-                                "line-opacity": 0.9,
-                                "line-blur": 2
+                                "line-color": "#ffffff",
+                                "line-width": 3.5,
+                                "line-opacity": 1.0
                               }} 
                             />
                           </Source>
                         )}
                         
+                        {/* 24h/48h/72h Waypoint Forecast Markers */}
+                        {waypoints.map((wp, idx) => (
+                          <Marker key={idx} longitude={wp.lon} latitude={wp.lat} anchor="center">
+                            <div className="flex flex-col items-center pointer-events-none drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+                              <span className="bg-black/90 text-white text-[10px] font-bold font-label-mono px-1.5 py-0.5 rounded border border-white/20">
+                                +{wp.hour}h (Cat {wp.cat})
+                              </span>
+                              <div className="w-2.5 h-2.5 rounded-full bg-rose-500 border-2 border-white mt-0.5"></div>
+                            </div>
+                          </Marker>
+                        ))}
+
                         <NavigationControl position="bottom-right" />
                         
                         {!isNaN(lat) && !isNaN(lon) && (
@@ -1981,7 +2020,10 @@ Diff: ${(ds.tribreed_degC - ds.baseline_degC).toFixed(2)}°C`}</title>
                               setLat(Math.min(Math.max(Number(e.lngLat.lat.toFixed(2)), 5), 30));
                             }}
                           >
-                            <div className="text-rose-500 cursor-grab active:cursor-grabbing transition-transform hover:scale-125 drop-shadow-[0_4px_10px_rgba(244,63,94,0.8)]">
+                            <div className="text-rose-500 cursor-grab active:cursor-grabbing transition-transform hover:scale-125 drop-shadow-[0_4px_10px_rgba(244,63,94,0.8)] flex flex-col items-center">
+                              <span className="bg-rose-600 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow mb-1">
+                                GENESIS
+                              </span>
                               <Crosshair className="w-10 h-10 stroke-[2.5]" />
                             </div>
                           </Marker>
@@ -2035,9 +2077,13 @@ Diff: ${(ds.tribreed_degC - ds.baseline_degC).toFixed(2)}°C`}</title>
                       </button>
 
                       {[
-                        { id: 1, label: 'SST', desc: 'Sea Surface Temperature', min: 20, max: 35, step: 0.1, val: sst, setVal: setSst, unit: '°C' },
+                        { id: 1, label: 'SST', desc: 'Sea Surface Temperature', min: 15, max: 35, step: 0.1, val: sst, setVal: setSst, unit: '°C' },
                         { id: 2, label: 'SSS', desc: 'Sea Surface Salinity', min: 30, max: 40, step: 0.1, val: sss, setVal: setSss, unit: 'PSU' },
                         { id: 3, label: 'SSH', desc: 'Sea Surface Height', min: -1.5, max: 1.5, step: 0.02, val: ssh, setVal: setSsh, unit: 'm' },
+                        { id: 4, label: 'U-CUR', desc: 'Zonal Current', min: -2, max: 2, step: 0.05, val: uCur, setVal: setUCur, unit: 'm/s' },
+                        { id: 5, label: 'V-CUR', desc: 'Meridional Current', min: -2, max: 2, step: 0.05, val: vCur, setVal: setVCur, unit: 'm/s' },
+                        { id: 6, label: 'U-WIND', desc: 'Zonal 10m Wind', min: -20, max: 20, step: 0.5, val: uWind, setVal: setUWind, unit: 'm/s' },
+                        { id: 7, label: 'V-WIND', desc: 'Meridional 10m Wind', min: -20, max: 20, step: 0.5, val: vWind, setVal: setVWind, unit: 'm/s' },
                       ].map(inp => (
                         <div key={inp.id} className="bg-surface-white border border-glass-border p-3 space-y-2 rounded-lg">
                           <div className="flex justify-between items-center">
@@ -2077,6 +2123,85 @@ Diff: ${(ds.tribreed_degC - ds.baseline_degC).toFixed(2)}°C`}</title>
                       ))}
                     </div>
                   </div>
+
+                  {/* BOTTOM SECTION: Analytics & Wargaming */}
+                  <div className="flex flex-col lg:flex-row gap-6 mt-6">
+                    {/* Live Recharts Graph */}
+                    <div className="lg:w-1/2 flex flex-col border border-glass-border rounded-xl bg-background shadow-sm overflow-hidden">
+                      <div className="bg-surface-container-low px-4 py-3 border-b border-glass-border flex justify-between items-center">
+                        <span className="text-sm font-bold text-on-surface">Live Vertical Thermal Graph (Seed Coordinate)</span>
+                        <span className="text-[10px] bg-rose-500 text-white px-2 py-0.5 rounded font-bold animate-pulse">LIVE RECHARTS</span>
+                      </div>
+                      <div className="p-4 h-[350px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <ComposedChart
+                            layout="vertical"
+                            data={inferResults?.depth_series?.filter((d:any) => d.depth_m <= 300) || []}
+                            margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={true} stroke="#e5e7eb" />
+                            <XAxis type="number" domain={[15, 35]} orientation="top" tick={{fontSize: 11}} />
+                            <YAxis dataKey="depth_m" reversed={true} tick={{fontSize: 11}} domain={[0, 300]} type="number" />
+                            <Tooltip 
+                              cursor={{ stroke: '#f43f5e', strokeWidth: 1, strokeDasharray: '4 4' }}
+                              contentStyle={{ backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
+                              formatter={(value: any) => [`${Number(value).toFixed(2)}°C`, 'Temperature']} 
+                              labelFormatter={(label: any) => `Depth: ${label}m`}
+                            />
+                            <ReferenceLine x={26} stroke="#ef4444" strokeWidth={1.5} strokeDasharray="4 4" label={{ position: 'insideBottomRight', value: '26°C Fuel Threshold', fill: '#ef4444', fontSize: 11, fontWeight: 'bold' }} />
+                            <Line type="monotone" dataKey="tribreed_degC" stroke="#f43f5e" strokeWidth={3} dot={{r: 0}} activeDot={{r: 6, strokeWidth: 0, fill: '#f43f5e'}} isAnimationActive={true} animationDuration={800} />
+                          </ComposedChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+
+                    {/* Wargaming Simulator */}
+                    <div className="lg:w-1/2 bg-surface-white border border-glass-border p-7 flex flex-col shadow-sm rounded-xl justify-center">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="text-xl font-bold text-on-surface flex items-center gap-2.5">
+                          <Crosshair className="w-5 h-5 text-rose-500" /> Interactive Wargaming Simulator
+                        </h4>
+                        <span className="bg-rose-500/10 text-rose-500 px-3 py-1 text-xs font-bold rounded-lg border border-rose-500/20">TRL-6 SCENARIO</span>
+                      </div>
+                      <p className="text-sm text-text-muted mb-6">
+                        The MapGL physics engine predicts the trajectory, but what about Intensity? Based on the live UOHC ({tchp.toFixed(1)} kJ/cm²) at your selected coordinate, this simulator forecasts the explosive Rapid Intensification (RI) of your injected Seed Storm over 24 hours.
+                      </p>
+                      
+                      <div className="bg-background border border-glass-border p-6 rounded-xl shadow-inner flex flex-col items-center justify-center">
+                        {(() => {
+                          let baseCat = seedStormCategory;
+                          let futureCat = baseCat;
+                          if (tchp < 20) futureCat = Math.max(0, baseCat - 1);
+                          else if (tchp >= 50 && tchp < 80) futureCat = Math.min(5, baseCat + 1);
+                          else if (tchp >= 80) futureCat = Math.min(5, baseCat + 2);
+                          const catNames = ["Depression", "Category 1", "Category 2", "Category 3", "Category 4", "Category 5"];
+                          
+                          let description = "";
+                          if (tchp < 20) description = "Insufficient deep thermal mass. Cyclone degrades.";
+                          else if (tchp >= 20 && tchp < 50) description = "Stable heat availability. Storm maintains current intensity.";
+                          else if (tchp >= 50 && tchp < 80) description = "High thermal fuel pool. Steady intensification expected.";
+                          else if (tchp >= 80) description = "MASSIVE deep thermal fuel. Explosive Rapid Intensification triggered.";
+
+                          return (
+                            <div className="text-center w-full">
+                              <div className="flex items-center justify-center gap-6 mb-4">
+                                <div className="text-center">
+                                  <div className="text-[10px] text-text-muted font-bold mb-1 uppercase">T=0h SEED</div>
+                                  <div className="text-sm font-bold bg-surface-container px-4 py-2 rounded-lg border border-glass-border shadow-inner">{catNames[baseCat]}</div>
+                                </div>
+                                <ChevronRight className={`w-8 h-8 ${futureCat > baseCat ? "text-rose-500 animate-pulse" : "text-text-muted"}`} />
+                                <div className="text-center">
+                                  <div className="text-[10px] text-text-muted font-bold mb-1 uppercase">T+24h FORECAST</div>
+                                  <div className={`text-sm font-bold px-4 py-2 rounded-lg border border-glass-border ${futureCat > baseCat ? "bg-rose-500 text-white shadow-lg shadow-rose-500/40" : "bg-surface-container"}`}>{catNames[futureCat]}</div>
+                                </div>
+                              </div>
+                              <p className={`text-sm font-bold ${futureCat > baseCat ? "text-rose-500" : "text-text-muted"}`}>{description}</p>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               );
             })()
@@ -2090,7 +2215,7 @@ Diff: ${(ds.tribreed_degC - ds.baseline_degC).toFixed(2)}°C`}</title>
                   <div>
                     <h2 className="font-headline-md text-headline-md text-on-surface flex items-center gap-2">
                       <FileSpreadsheet className="w-5 h-5 text-primary" />
-                      Grand In-Situ ARGO Truth vs Tri-Breeded Predictions (99,721 Floats)
+                      Grand In-Situ ARGO Truth vs Duo-Elite Predictions (99,721 Floats)
                     </h2>
                     <p className="font-body-sm text-body-sm text-text-muted">
                       Layer-by-layer verification across all 15 depths evaluated with continuous 2D bilinear interpolation
@@ -2108,7 +2233,7 @@ Diff: ${(ds.tribreed_degC - ds.baseline_degC).toFixed(2)}°C`}</title>
                         <th className="p-3">Depth (m)</th>
                         <th className="p-3">In-Situ Float Obs</th>
                         <th className="p-3">ARGO Float Ground Truth</th>
-                        <th className="p-3">Tri-Breeded AI Prediction</th>
+                        <th className="p-3">Duo-Elite AI Prediction</th>
                         <th className="p-3">Mean Bias</th>
                         <th className="p-3">Layer RMSE</th>
                         <th className="p-3">Correlation (r)</th>
