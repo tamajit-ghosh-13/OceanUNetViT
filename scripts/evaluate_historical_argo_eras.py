@@ -32,7 +32,7 @@ from scipy.interpolate import PchipInterpolator, RegularGridInterpolator
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from config import (
+from backend.config import (
     BBOX,
     STANDARD_DEPTH_LEVELS_M,
     N_DEPTH_LEVELS,
@@ -43,8 +43,8 @@ from config import (
 )
 from preprocessing.regrid import regrid_to_standard_grid, build_standard_grid
 from preprocessing.normalize import denormalize_outputs, preprocess_inputs
-from model import create_model
-from train import get_compute_device
+from backend.model import create_model
+from backend.train import get_compute_device
 
 def run_model_inference(
     model: torch.nn.Module,

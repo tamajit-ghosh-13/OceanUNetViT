@@ -58,7 +58,7 @@ from datetime import datetime
 import copernicusmarine
 import gsw
 
-from config import (
+from backend.config import (
     BBOX,
     STANDARD_DEPTH_LEVELS_M,
     N_DEPTH_LEVELS,
@@ -68,9 +68,9 @@ from config import (
     TEMP_TARGET_STATS_PER_DEPTH,
 )
 from preprocessing.regrid import regrid_to_standard_grid, build_standard_grid
-from model import create_model
-from train import get_compute_device
-from data_loader import OceanDataset
+from backend.model import create_model
+from backend.train import get_compute_device
+from backend.data_loader import OceanDataset
 
 ANOMALY_PERIODS = [
     ("nov16", "2016-11-01", "2016-11-30", "Nov 2016: Record Negative IOD"),

@@ -31,7 +31,7 @@ from typing import Optional, Tuple, Dict, Any, List
 from datetime import datetime, timedelta
 import scipy.optimize as opt
 
-from config import (
+from backend.config import (
     BBOX,
     STANDARD_DEPTH_LEVELS_M,
     N_DEPTH_LEVELS,
@@ -40,8 +40,8 @@ from config import (
     NORMALIZATION_STATS,
     TEMP_TARGET_STATS_PER_DEPTH,
 )
-from model import create_model
-from train import get_compute_device
+from backend.model import create_model
+from backend.train import get_compute_device
 from evaluate_august_december import run_model_inference
 from evaluate_argo import load_and_cache_surface_inputs
 from evaluate_argo_2022 import download_argo_ifremer, get_or_download_surface_inputs

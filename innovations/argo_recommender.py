@@ -23,7 +23,7 @@ import torch
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
-from config import (
+from backend.config import (
     BBOX,
     STANDARD_DEPTH_LEVELS_M,
     N_DEPTH_LEVELS,
@@ -31,8 +31,8 @@ from config import (
     GRID_LON_SIZE,
     TEMP_TARGET_STATS_PER_DEPTH,
 )
-from model import create_model
-from train import get_compute_device
+from backend.model import create_model
+from backend.train import get_compute_device
 from preprocessing.normalize import denormalize_outputs, preprocess_inputs
 
 

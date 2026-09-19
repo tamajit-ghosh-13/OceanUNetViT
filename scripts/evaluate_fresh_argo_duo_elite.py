@@ -25,7 +25,7 @@ from datetime import datetime
 from scipy.interpolate import RegularGridInterpolator, PchipInterpolator
 from erddapy import ERDDAP
 
-from config import (
+from backend.config import (
     BBOX,
     STANDARD_DEPTH_LEVELS_M,
     GRID_LAT_SIZE,
@@ -35,8 +35,8 @@ from config import (
 )
 from preprocessing.regrid import regrid_to_standard_grid, build_standard_grid
 from preprocessing.normalize import denormalize_outputs, preprocess_inputs
-from model import create_model
-from train import get_compute_device
+from backend.model import create_model
+from backend.train import get_compute_device
 
 DUO_ELITE_WEIGHTS = {
     0: [0.5000, 0.5000],

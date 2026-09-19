@@ -29,12 +29,12 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from typing import Dict, Any, Tuple, Optional
 
-from config import (
+from backend.config import (
     N_INPUT_CHANNELS, N_DEPTH_LEVELS, STANDARD_DEPTH_LEVELS_M,
     TRAINING, NORMALIZATION_STATS, GRID_LAT_SIZE, GRID_LON_SIZE,
 )
-from model import OceanUNetViT, create_model
-from data_loader import OceanDataset, create_ocean_dataloaders
+from backend.model import OceanUNetViT, create_model
+from backend.data_loader import OceanDataset, create_ocean_dataloaders
 from preprocessing.normalize import denormalize_outputs
 
 

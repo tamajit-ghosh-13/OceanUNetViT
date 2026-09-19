@@ -47,7 +47,7 @@ import torch.nn as nn
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
-from config import (
+from backend.config import (
     BBOX,
     STANDARD_DEPTH_LEVELS_M,
     N_DEPTH_LEVELS,
@@ -56,9 +56,9 @@ from config import (
     NORMALIZATION_STATS,
     TEMP_TARGET_STATS_PER_DEPTH,
 )
-from model import create_model
-from train import get_compute_device
-from data_loader import OceanDataset
+from backend.model import create_model
+from backend.train import get_compute_device
+from backend.data_loader import OceanDataset
 from scripts.train_v5 import PhysicsPreservingThermoclineLoss
 
 

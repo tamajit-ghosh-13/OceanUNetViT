@@ -37,7 +37,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Tuple, Optional
 
-from config import N_INPUT_CHANNELS, N_DEPTH_LEVELS, MODEL
+from backend.config import N_INPUT_CHANNELS, N_DEPTH_LEVELS, MODEL
 
 
 # ==============================================================================

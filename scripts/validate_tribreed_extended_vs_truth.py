@@ -18,8 +18,8 @@ import numpy as np
 import pandas as pd
 import torch
 from scipy.interpolate import RegularGridInterpolator, PchipInterpolator
-from model import create_model
-from config import STANDARD_DEPTH_LEVELS_M, BBOX, GRID_LAT_SIZE, GRID_LON_SIZE, TEMP_TARGET_STATS_PER_DEPTH, NORMALIZATION_STATS
+from backend.model import create_model
+from backend.config import STANDARD_DEPTH_LEVELS_M, BBOX, GRID_LAT_SIZE, GRID_LON_SIZE, TEMP_TARGET_STATS_PER_DEPTH, NORMALIZATION_STATS
 from preprocessing.normalize import denormalize_outputs, preprocess_inputs
 from scripts.generate_tribreed_snapshots import TRI_WEIGHTS
 

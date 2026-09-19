@@ -15,7 +15,7 @@ from products.derived_products import (
     detect_sofar_channel,
     compute_all_derived_products,
 )
-from config import STANDARD_DEPTH_LEVELS_M
+from backend.config import STANDARD_DEPTH_LEVELS_M
 
 
 def test_isotherm_depth_analytical():

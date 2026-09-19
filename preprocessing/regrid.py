@@ -38,7 +38,7 @@ except ImportError:
     HAS_XARRAY = False
 
 # Import our project configuration
-from config import BBOX, GRID_RESOLUTION_DEG, GRID_LAT_SIZE, GRID_LON_SIZE
+from backend.config import BBOX, GRID_RESOLUTION_DEG, GRID_LAT_SIZE, GRID_LON_SIZE
 
 
 # ==============================================================================

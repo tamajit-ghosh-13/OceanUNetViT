@@ -24,7 +24,7 @@ import xarray as xr
 import copernicusmarine
 from datetime import datetime, timedelta
 
-from config import (
+from backend.config import (
     BBOX,
     STANDARD_DEPTH_LEVELS_M,
     N_DEPTH_LEVELS,

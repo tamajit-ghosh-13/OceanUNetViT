@@ -38,7 +38,7 @@ except ImportError:
     HAS_COPERNICUS_LIBS = False
 
 # Project-level imports
-from config import (
+from backend.config import (
     BBOX, GRID_LAT_SIZE, GRID_LON_SIZE,
     N_INPUT_CHANNELS, N_DEPTH_LEVELS,
     INPUT_VARIABLES, STANDARD_DEPTH_LEVELS_M,
@@ -257,7 +257,7 @@ class OceanDataset(Dataset):
         processed_inputs = np.nan_to_num(processed_inputs, nan=0.0, posinf=0.0, neginf=0.0)
 
         # 3. Per-Depth Target Normalization (Feature 3)
-        from config import TEMP_TARGET_STATS_PER_DEPTH
+        from backend.config import TEMP_TARGET_STATS_PER_DEPTH
         processed_targets = np.zeros_like(raw_targets, dtype=np.float32)
         for d_idx in range(min(15, raw_targets.shape[0])):
             d_mean = TEMP_TARGET_STATS_PER_DEPTH[d_idx]["mean"]

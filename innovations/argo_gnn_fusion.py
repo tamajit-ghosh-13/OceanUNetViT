@@ -20,15 +20,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from config import (
+from backend.config import (
     BBOX,
     STANDARD_DEPTH_LEVELS_M,
     N_DEPTH_LEVELS,
     GRID_LAT_SIZE,
     GRID_LON_SIZE,
 )
-from model import create_model, EncoderBlock, DoubleConv
-from train import get_compute_device
+from backend.model import create_model, EncoderBlock, DoubleConv
+from backend.train import get_compute_device
 
 
 class SparseArgoGraphLayer(nn.Module):

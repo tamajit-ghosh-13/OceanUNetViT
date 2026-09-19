@@ -26,7 +26,7 @@ thermal (and haline) prediction volumes:
 import numpy as np
 import torch
 from typing import Dict, Any, Union, Tuple, Optional
-from config import STANDARD_DEPTH_LEVELS_M
+from backend.config import STANDARD_DEPTH_LEVELS_M
 
 
 # ==============================================================================

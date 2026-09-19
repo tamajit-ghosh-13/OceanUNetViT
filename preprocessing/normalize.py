@@ -38,7 +38,7 @@ try:
 except ImportError:
     HAS_XARRAY = False
 
-from config import INPUT_VARIABLES, NORMALIZATION_STATS, GRID_LAT_SIZE, GRID_LON_SIZE
+from backend.config import INPUT_VARIABLES, NORMALIZATION_STATS, GRID_LAT_SIZE, GRID_LON_SIZE
 
 
 # ==============================================================================
@@ -123,7 +123,7 @@ def denormalize_outputs(
     --------
     np.ndarray in °C, same shape as input.
     """
-    from config import TEMP_TARGET_STATS_PER_DEPTH, NORMALIZATION_STATS
+    from backend.config import TEMP_TARGET_STATS_PER_DEPTH, NORMALIZATION_STATS
 
     if stats is None:
         stats = TEMP_TARGET_STATS_PER_DEPTH

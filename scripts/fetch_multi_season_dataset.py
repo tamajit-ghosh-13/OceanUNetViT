@@ -29,7 +29,7 @@ from datetime import datetime, timedelta
 import copernicusmarine
 import gsw
 
-from config import (
+from backend.config import (
     BBOX,
     STANDARD_DEPTH_LEVELS_M,
     N_DEPTH_LEVELS,

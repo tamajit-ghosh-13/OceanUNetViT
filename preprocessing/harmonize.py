@@ -35,7 +35,7 @@ try:
 except ImportError:
     HAS_XARRAY = False
 
-from config import (
+from backend.config import (
     STANDARD_DEPTH_LEVELS_M,
     N_DEPTH_LEVELS,
     INPUT_VARIABLES,

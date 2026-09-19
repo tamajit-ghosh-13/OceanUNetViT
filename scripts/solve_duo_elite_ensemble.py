@@ -27,7 +27,7 @@ import torch
 from scipy.optimize import minimize
 from scipy.interpolate import RegularGridInterpolator, PchipInterpolator
 
-from config import (
+from backend.config import (
     STANDARD_DEPTH_LEVELS_M,
     BBOX,
     GRID_LAT_SIZE,
@@ -36,8 +36,8 @@ from config import (
     NORMALIZATION_STATS,
 )
 from preprocessing.normalize import denormalize_outputs, preprocess_inputs
-from model import create_model
-from train import get_compute_device
+from backend.model import create_model
+from backend.train import get_compute_device
 
 def solve_duo_elite_weights():
     device = get_compute_device()

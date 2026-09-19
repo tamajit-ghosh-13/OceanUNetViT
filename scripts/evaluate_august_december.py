@@ -26,7 +26,7 @@ from typing import Optional, Tuple, Dict, Any, List
 from datetime import datetime, timedelta
 import copernicusmarine
 
-from config import (
+from backend.config import (
     BBOX,
     STANDARD_DEPTH_LEVELS_M,
     N_DEPTH_LEVELS,
@@ -38,9 +38,9 @@ from config import (
 from preprocessing.regrid import regrid_to_standard_grid, build_standard_grid
 from preprocessing.harmonize import select_standard_depths
 from preprocessing.normalize import denormalize_outputs, preprocess_inputs
-from model import create_model
-from train import get_compute_device
-from evaluate import compute_all_metrics, print_metrics_report
+from backend.model import create_model
+from backend.train import get_compute_device
+from backend.evaluate import compute_all_metrics, print_metrics_report
 
 
 # ==============================================================================

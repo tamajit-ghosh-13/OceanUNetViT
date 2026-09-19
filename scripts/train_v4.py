@@ -26,7 +26,7 @@ import torch.nn as nn
 from collections import Counter
 from torch.utils.data import DataLoader, WeightedRandomSampler
 
-from config import (
+from backend.config import (
     STANDARD_DEPTH_LEVELS_M,
     N_DEPTH_LEVELS,
     GRID_LAT_SIZE,
@@ -34,10 +34,10 @@ from config import (
     TEMP_TARGET_STATS_PER_DEPTH,
 )
 from preprocessing.normalize import denormalize_outputs
-from data_loader import OceanDataset
-from model import create_model
-from train import get_compute_device
-from evaluate import compute_all_metrics, print_metrics_report, plot_skill_profiles, plot_prediction_snapshot
+from backend.data_loader import OceanDataset
+from backend.model import create_model
+from backend.train import get_compute_device
+from backend.evaluate import compute_all_metrics, print_metrics_report, plot_skill_profiles, plot_prediction_snapshot
 from fetch_multi_season_dataset import build_full_multiseason_dataset
 
 

@@ -26,14 +26,14 @@ import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
 
-from config import (
+from backend.config import (
     BBOX,
     STANDARD_DEPTH_LEVELS_M,
     N_DEPTH_LEVELS,
     GRID_LAT_SIZE,
     GRID_LON_SIZE,
 )
-from model import EncoderBlock, DecoderBlock, TransformerBottleneck, DoubleConv
+from backend.model import EncoderBlock, DecoderBlock, TransformerBottleneck, DoubleConv
 
 
 class OceanUNetViTAleatoric(nn.Module):

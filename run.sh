@@ -32,9 +32,27 @@ cleanup() {
 }
 trap cleanup SIGINT SIGTERM EXIT
 
-# 1. Start Python FastAPI Inference Engine
-echo "🧠 [1/2] Starting Python PyTorch FastAPI Inference Server on Port 8000..."
-./.venv/bin/python3 -m uvicorn api_server:app --host 0.0.0.0 --port 8000 --log-level info &
+# 1. Detect Python Interpreter
+if [ -f "./.venv/bin/python3" ]; then
+    PYTHON_BIN="./.venv/bin/python3"
+elif [ -f "./.venv/Scripts/python.exe" ]; then
+    PYTHON_BIN="./.venv/Scripts/python.exe"
+elif [ -f "./venv/bin/python3" ]; then
+    PYTHON_BIN="./venv/bin/python3"
+elif [ -f "./venv/Scripts/python.exe" ]; then
+    PYTHON_BIN="./venv/Scripts/python.exe"
+elif command -v python3 &> /dev/null; then
+    PYTHON_BIN="python3"
+elif command -v python &> /dev/null; then
+    PYTHON_BIN="python"
+else
+    echo "❌ Error: Python could not be found. Please install Python 3.10+."
+    exit 1
+fi
+
+# Start Python FastAPI Inference Engine
+echo "🧠 [1/2] Starting Python PyTorch FastAPI Inference Server on Port 8000 using ($PYTHON_BIN)..."
+"$PYTHON_BIN" -m uvicorn backend.api_server:app --host 0.0.0.0 --port 8000 --log-level info &
 API_PID=$!
 
 # Wait briefly for FastAPI to bind

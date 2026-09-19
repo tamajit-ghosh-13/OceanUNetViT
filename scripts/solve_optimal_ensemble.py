@@ -21,11 +21,11 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import numpy as np
 import torch
 from scipy.optimize import minimize
-from config import STANDARD_DEPTH_LEVELS_M, N_DEPTH_LEVELS
-from model import create_model
-from train import get_compute_device
+from backend.config import STANDARD_DEPTH_LEVELS_M, N_DEPTH_LEVELS
+from backend.model import create_model
+from backend.train import get_compute_device
 from evaluate_august_december import run_model_inference
-from evaluate import compute_all_metrics
+from backend.evaluate import compute_all_metrics
 
 
 def solve_optimal_ensemble_weights():

@@ -26,7 +26,7 @@ from datetime import datetime, timedelta
 import copernicusmarine
 import gsw
 
-from config import (
+from backend.config import (
     BBOX,
     STANDARD_DEPTH_LEVELS_M,
     N_DEPTH_LEVELS,
@@ -37,8 +37,8 @@ from config import (
 )
 from preprocessing.regrid import regrid_to_standard_grid, build_standard_grid
 from preprocessing.normalize import denormalize_outputs, preprocess_inputs
-from model import create_model
-from train import get_compute_device
+from backend.model import create_model
+from backend.train import get_compute_device
 from evaluate_august_december import download_fast_nc_subset, run_model_inference
 
 

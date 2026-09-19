@@ -114,7 +114,7 @@ export default function OceanEmbedDashboard() {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
 
       const res = await fetch("http://localhost:8000/api/predict", {
         method: "POST",

@@ -32,7 +32,7 @@ import torch
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 
-from config import (
+from backend.config import (
     BBOX,
     STANDARD_DEPTH_LEVELS_M,
     N_DEPTH_LEVELS,
@@ -40,10 +40,10 @@ from config import (
     GRID_LON_SIZE,
     TEMP_TARGET_STATS_PER_DEPTH,
 )
-from model import create_model
-from train import get_compute_device
+from backend.model import create_model
+from backend.train import get_compute_device
 from evaluate_august_december import run_model_inference
-from evaluate import compute_all_metrics, plot_skill_profiles
+from backend.evaluate import compute_all_metrics, plot_skill_profiles
 
 
 def plot_v4_depth_snapshot(

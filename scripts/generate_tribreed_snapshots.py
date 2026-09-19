@@ -21,17 +21,17 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-from config import (
+from backend.config import (
     BBOX,
     STANDARD_DEPTH_LEVELS_M,
     N_DEPTH_LEVELS,
     GRID_LAT_SIZE,
     GRID_LON_SIZE,
 )
-from model import create_model
-from train import get_compute_device
+from backend.model import create_model
+from backend.train import get_compute_device
 from evaluate_august_december import run_model_inference
-from evaluate import compute_all_metrics, plot_skill_profiles
+from backend.evaluate import compute_all_metrics, plot_skill_profiles
 
 # Exact Simplex Quadratic Error-Covariance Optimal Weights across all 15 depths (Tri-Breed)
 TRI_WEIGHTS = {

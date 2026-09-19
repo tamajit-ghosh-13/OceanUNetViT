@@ -39,12 +39,12 @@ try:
 except ImportError:
     HAS_MATPLOTLIB = False
 
-from config import (
+from backend.config import (
     STANDARD_DEPTH_LEVELS_M, N_DEPTH_LEVELS,
     N_INPUT_CHANNELS, GRID_LAT_SIZE, GRID_LON_SIZE,
     NORMALIZATION_STATS,
 )
-from model import create_model
+from backend.model import create_model
 from preprocessing.normalize import denormalize_outputs
 
 

@@ -19,8 +19,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import numpy as np
 import torch
 
-from model import create_model
-from config import (
+from backend.model import create_model
+from backend.config import (
     STANDARD_DEPTH_LEVELS_M,
     TEMP_TARGET_STATS_PER_DEPTH,
     NORMALIZATION_STATS,

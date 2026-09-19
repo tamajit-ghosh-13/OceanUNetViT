@@ -9,6 +9,13 @@ No capping, no clipping, no artificial post-processing.
 
 import os
 import sys
+
+# Ensure UTF-8 output encoding across all operating systems
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 import io
 import base64
 import threading
@@ -24,7 +31,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 import gsw
 
-from config import (
+from backend.config import (
     BBOX,
     STANDARD_DEPTH_LEVELS_M,
     N_DEPTH_LEVELS,
@@ -33,7 +40,7 @@ from config import (
     TEMP_TARGET_STATS_PER_DEPTH,
     NORMALIZATION_STATS,
 )
-from model import create_model
+from backend.model import create_model
 from preprocessing.normalize import normalize_inputs, denormalize_outputs, build_land_sea_mask
 from products.derived_products import (
     compute_isotherm_depth,
@@ -80,25 +87,39 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/")
+@app.get("/health")
+def health_check():
+    return {
+        "status": "HEALTHY",
+        "service": "OceanEmbed Duo-Elite AI Inference Server",
+        "port": 8000,
+        "models_loaded": {
+            "v4_extended": model_v4_ext is not None,
+            "v5_finetuned": model_v5_ft is not None,
+            "baseline_7ch": model_base7 is not None,
+        }
+    }
+
 device = torch.device("cpu")
 print("🚀 Initializing Duo-Elite Neural Backbones on CPU for thread-safe instant inference...")
 
 # 1. Load v4_extended
 model_v4_ext = create_model(in_channels=12, out_depth_levels=15).to(device)
 ckpt_v4 = "checkpoints/best_ocean_model_v4_extended.pt" if os.path.exists("checkpoints/best_ocean_model_v4_extended.pt") else "checkpoints/best_ocean_model_v4.pt"
-model_v4_ext.load_state_dict(torch.load(ckpt_v4, map_location=device), strict=False)
+model_v4_ext.load_state_dict(torch.load(ckpt_v4, map_location=device, weights_only=False), strict=False)
 model_v4_ext.eval()
 
 # 2. Load v5_finetuned
 model_v5_ft = create_model(in_channels=12, out_depth_levels=15).to(device)
 ckpt_v5 = "checkpoints/best_ocean_model_v5_finetuned.pt" if os.path.exists("checkpoints/best_ocean_model_v5_finetuned.pt") else "checkpoints/best_ocean_model_finetuned.pt"
-model_v5_ft.load_state_dict(torch.load(ckpt_v5, map_location=device), strict=False)
+model_v5_ft.load_state_dict(torch.load(ckpt_v5, map_location=device, weights_only=False), strict=False)
 model_v5_ft.eval()
 
 # 3. Load baseline 7-channel
 model_base7 = create_model(in_channels=7, out_depth_levels=15).to(device)
 ckpt_base = "checkpoints/best_ocean_model_finetuned.pt" if os.path.exists("checkpoints/best_ocean_model_finetuned.pt") else "checkpoints/best_ocean_model.pt"
-model_base7.load_state_dict(torch.load(ckpt_base, map_location=device), strict=False)
+model_base7.load_state_dict(torch.load(ckpt_base, map_location=device, weights_only=False), strict=False)
 model_base7.eval()
 
 land_mask = build_land_sea_mask(method="synthetic")
@@ -629,33 +650,31 @@ def argo_deployment_recommender():
     Uses Monte Carlo Dropout to calculate epistemic uncertainty and recommends
     the top 7 locations for new ARGO float deployments.
     """
-    if model is None:
+    if model_v4_ext is None:
         raise HTTPException(status_code=500, detail="Model is not loaded.")
         
     try:
         # Mocking input for now, but in reality this should use the latest satellite pass
-        input_tensor = torch.zeros((1, 7, GRID_LAT_SIZE, GRID_LON_SIZE), device=device)
-        land_mask = build_land_sea_mask().to(device)
+        input_tensor = torch.zeros((1, 12, GRID_LAT_SIZE, GRID_LON_SIZE), device=device)
         
         # Grid setup
-        lats = np.linspace(BBOX["lat_min"], BBOX["lat_max"], GRID_LAT_SIZE)
-        lons = np.linspace(BBOX["lon_min"], BBOX["lon_max"], GRID_LON_SIZE)
+        lats = np.linspace(BBOX["min_lat"], BBOX["max_lat"], GRID_LAT_SIZE)
+        lons = np.linspace(BBOX["min_lon"], BBOX["max_lon"], GRID_LON_SIZE)
         lon_grid, lat_grid = np.meshgrid(lons, lats)
         
-        model.train() # Enable Dropout
+        model_v4_ext.train()  # Enable Dropout
         
         predictions = []
-        num_passes = 35
+        num_passes = 20
         with torch.no_grad():
             for _ in range(num_passes):
-                predictions.append(model(input_tensor))
+                predictions.append(model_v4_ext(input_tensor))
                 
         stacked_preds = torch.stack(predictions)
         variance_3d = torch.var(stacked_preds, dim=0) 
         spatial_uncertainty = torch.mean(variance_3d[0], dim=0).cpu().numpy()
         
-        land_mask_np = land_mask.cpu().numpy()
-        spatial_uncertainty[~land_mask_np] = 0.0
+        spatial_uncertainty[~land_mask] = 0.0
         
         min_distance_px = 10
         local_max = maximum_filter(spatial_uncertainty, size=min_distance_px) == spatial_uncertainty
@@ -678,7 +697,7 @@ def argo_deployment_recommender():
                 "uncertainty_score": float(score)
             })
             
-        model.eval() # Reset to eval
+        model_v4_ext.eval()  # Reset to eval
         
         return {
             "status": "success",
@@ -686,5 +705,5 @@ def argo_deployment_recommender():
             "targets": recommended_targets
         }
     except Exception as e:
-        model.eval()
+        model_v4_ext.eval()
         raise HTTPException(status_code=500, detail=str(e))

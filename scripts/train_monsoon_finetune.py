@@ -36,7 +36,7 @@ from datetime import datetime, timedelta
 import copernicusmarine
 import gsw
 
-from config import (
+from backend.config import (
     BBOX,
     STANDARD_DEPTH_LEVELS_M,
     N_DEPTH_LEVELS,
@@ -48,10 +48,10 @@ from config import (
 from preprocessing.regrid import regrid_to_standard_grid, build_standard_grid
 from preprocessing.harmonize import select_standard_depths
 from preprocessing.normalize import denormalize_outputs
-from data_loader import OceanDataset
-from model import create_model
-from train import get_compute_device, OceanReconstructionLoss, train_one_epoch, evaluate
-from evaluate import compute_all_metrics, print_metrics_report, plot_skill_profiles, plot_prediction_snapshot
+from backend.data_loader import OceanDataset
+from backend.model import create_model
+from backend.train import get_compute_device, OceanReconstructionLoss, train_one_epoch, evaluate
+from backend.evaluate import compute_all_metrics, print_metrics_report, plot_skill_profiles, plot_prediction_snapshot
 
 
 # ==============================================================================
