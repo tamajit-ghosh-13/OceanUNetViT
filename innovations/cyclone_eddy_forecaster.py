@@ -59,7 +59,7 @@ class LatentTrajectoryForecaster(nn.Module):
 def run_cyclone_eddy_trajectory_forecaster():
     device = get_compute_device()
     print("\n" + "=" * 105)
-    print("🌀 OCEANEMBED - CYCLONE & MESOSCALE EDDY TRAJECTORY FORECASTER")
+    print("[*] OCEANEMBED - CYCLONE & MESOSCALE EDDY TRAJECTORY FORECASTER")
     print("=" * 105)
 
     # 1. Load trained v4 model
@@ -125,8 +125,8 @@ def run_cyclone_eddy_trajectory_forecaster():
     plt.savefig(out_file, dpi=300, bbox_inches="tight")
     plt.close()
 
-    print(f"📊 Saved Cyclone & Eddy Track visualization to: {out_file}")
-    print("✨ Feature #7 (Cyclone & Eddy Latent Trajectory Forecaster) Complete!")
+    print(f"[+] Saved Cyclone & Eddy Track visualization to: {out_file}")
+    print("[+] Feature #7 (Cyclone & Eddy Latent Trajectory Forecaster) Complete!")
 
 
 if __name__ == "__main__":

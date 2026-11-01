@@ -48,13 +48,13 @@ def get_compute_device() -> torch.device:
     """
     if torch.backends.mps.is_available() and torch.backends.mps.is_built():
         device = torch.device("mps")
-        print("⚡ Apple Silicon MPS (Metal Performance Shaders) activated!")
+        print("[+] Apple Silicon MPS (Metal Performance Shaders) activated!")
     elif torch.cuda.is_available():
         device = torch.device("cuda")
-        print(f"⚡ NVIDIA CUDA GPU detected: {torch.cuda.get_device_name(0)}")
+        print(f"[+] NVIDIA CUDA GPU detected: {torch.cuda.get_device_name(0)}")
     else:
         device = torch.device("cpu")
-        print("ℹ️  Running on CPU (consider installing MPS-enabled PyTorch for Apple Silicon).")
+        print("[i] Running on CPU (consider installing MPS-enabled PyTorch for Apple Silicon).")
     return device
 
 
