@@ -417,7 +417,7 @@ export default function OceanEmbedDashboard() {
           <div className="hidden md:flex items-center gap-1.5 bg-primary-container text-on-primary-container/60 border border-primary-fixed-dim/60 text-primary px-3 py-1.5  text-body-sm font-label-mono text-label-mono">
             <ShieldCheck className="w-4 h-4 text-primary" />
             <span>IN-SITU RMSE: </span>
-            <span className="font-bold text-on-surface">0.7422°C</span>
+            <span className="font-bold text-on-surface" suppressHydrationWarning>0.7422&deg;C</span>
           </div>
         </div>
       </header>
